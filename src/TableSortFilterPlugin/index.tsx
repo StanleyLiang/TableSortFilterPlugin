@@ -6,17 +6,11 @@
  *
  */
 
-import type {LexicalEditor} from 'lexical';
-
 import {useLexicalComposerContext} from '@lexical/react/LexicalComposerContext';
 import {useLexicalEditable} from '@lexical/react/useLexicalEditable';
 import {
   $findTableNode,
-  $isTableCellNode,
-  $isTableRowNode,
   $isTableSelection,
-  TableCellHeaderStates,
-  TableCellNode,
   TableNode,
 } from '@lexical/table';
 import {
@@ -24,7 +18,6 @@ import {
   $getSelection,
   COMMAND_PRIORITY_EDITOR,
 } from 'lexical';
-import * as React from 'react';
 import {useEffect, useState} from 'react';
 
 import {
@@ -53,7 +46,7 @@ export default function TableSortFilterPlugin(): JSX.Element | null {
   const [editor] = useLexicalComposerContext();
   const isEditable = useLexicalEditable();
 
-  const [sortState, setSortState] = useState<TableSortState>(null);
+  const [sortStates, setSortStates] = useState<Map<string, TableSortState>>(new Map());
   const [filterState, setFilterState] = useState<TableFilterState>({});
 
   useEffect(() => {
@@ -73,7 +66,9 @@ export default function TableSortFilterPlugin(): JSX.Element | null {
               const data = $getTableData(tableNode);
               const sortedData = sortTableData(data, columnIndex, direction);
               $updateTableData(tableNode, sortedData);
-              setSortState({columnIndex, direction});
+              // Update sort state for this specific table
+              const tableKey = tableNode.getKey();
+              setSortStates(prev => new Map(prev).set(tableKey, {columnIndex, direction}));
             }
           }
         });
@@ -119,7 +114,7 @@ export default function TableSortFilterPlugin(): JSX.Element | null {
       CLEAR_TABLE_FILTERS_COMMAND,
       () => {
         setFilterState({});
-        setSortState(null);
+        setSortStates(new Map());
 
         // TODO: Restore original table data
         // This would require storing the original data when filters are first applied
@@ -151,7 +146,6 @@ export default function TableSortFilterPlugin(): JSX.Element | null {
       // Check if click is on the pseudo-element (sort button area)
       const rect = headerCell.getBoundingClientRect();
       const clickX = event.clientX - rect.left;
-      const clickY = event.clientY - rect.top;
       
       // Rough detection: if click is in the right portion of the cell
       if (clickX > rect.width - 30) {
@@ -167,30 +161,26 @@ export default function TableSortFilterPlugin(): JSX.Element | null {
         
         if (columnIndex === -1) return;
         
-        // Determine sort direction
-        let direction: SortDirection = 'asc';
+        // Find the table element that contains this header
+        const tableElement = headerCell.closest('table');
+        if (!tableElement) return;
         
-        if (sortState && sortState.columnIndex === columnIndex) {
-          direction = sortState.direction === 'asc' ? 'desc' : 'asc';
-        }
-        
-        // Clear previous sort classes from all headers
-        const allHeaders = document.querySelectorAll('.PlaygroundEditorTheme__tableCellHeader');
-        allHeaders.forEach(cell => {
-          cell.classList.remove('sort-asc', 'sort-desc');
-        });
-        
-        // Add sort class to current cell
-        headerCell.classList.add(direction === 'asc' ? 'sort-asc' : 'sort-desc');
-        
-        // Find and execute sort on the table
+        // Find and execute sort on the specific table
         editor.update(() => {
           const root = $getRoot();
-          const tableNodes: TableNode[] = [];
+          let targetTableNode: TableNode | null = null;
+          let tableIndex = -1;
           
           function traverse(node: any) {
             if (node.getType && node.getType() === 'table') {
-              tableNodes.push(node as TableNode);
+              tableIndex++;
+              
+              // Match DOM table with Lexical table node by index
+              const allTables = document.querySelectorAll('table');
+              if (allTables[tableIndex] === tableElement) {
+                targetTableNode = node as TableNode;
+                return;
+              }
             }
             if (node.getChildren) {
               const children = node.getChildren();
@@ -200,12 +190,32 @@ export default function TableSortFilterPlugin(): JSX.Element | null {
           
           traverse(root);
           
-          if (tableNodes.length > 0) {
-            const tableNode = tableNodes[0]; // Sort first table for now
-            const data = $getTableData(tableNode);
+          if (targetTableNode) {
+            const tableKey = targetTableNode.getKey();
+            const currentSortState = sortStates.get(tableKey);
+            
+            // Determine sort direction based on this table's current state
+            let direction: SortDirection = 'asc';
+            if (currentSortState && currentSortState.columnIndex === columnIndex) {
+              direction = currentSortState.direction === 'asc' ? 'desc' : 'asc';
+            }
+            
+            // Clear sort classes only from this table's headers
+            const thisTableHeaders = tableElement.querySelectorAll('.PlaygroundEditorTheme__tableCellHeader');
+            thisTableHeaders.forEach(cell => {
+              cell.classList.remove('sort-asc', 'sort-desc');
+            });
+            
+            // Add sort class to current cell
+            headerCell.classList.add(direction === 'asc' ? 'sort-asc' : 'sort-desc');
+            
+            // Execute sort
+            const data = $getTableData(targetTableNode);
             const sortedData = sortTableData(data, columnIndex, direction);
-            $updateTableData(tableNode, sortedData);
-            setSortState({columnIndex, direction});
+            $updateTableData(targetTableNode, sortedData);
+            
+            // Update sort state for this specific table
+            setSortStates(prev => new Map(prev).set(tableKey, {columnIndex, direction}));
           }
         });
       }
@@ -216,7 +226,7 @@ export default function TableSortFilterPlugin(): JSX.Element | null {
     return () => {
       document.removeEventListener('click', handleClick, true);
     };
-  }, [editor, isEditable, sortState]);
+  }, [editor, isEditable, sortStates]);
 
   return null;
 }

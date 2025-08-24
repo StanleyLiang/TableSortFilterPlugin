@@ -101,7 +101,7 @@ export function filterTableData(
 
   const filteredRows = dataRows.filter((row) => {
     return Object.entries(filters).every(([columnIndex, filterValue]) => {
-      const cellValue = row[parseInt(columnIndex)] || '';
+      const cellValue = row[parseInt(columnIndex, 10)] || '';
       return cellValue.toLowerCase().includes(filterValue.toLowerCase());
     });
   });
