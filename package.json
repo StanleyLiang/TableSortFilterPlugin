@@ -1,0 +1,41 @@
+{
+  "name": "table-sort-filter-plugin",
+  "version": "1.0.0",
+  "description": "A Lexical plugin for table sorting and filtering functionality",
+  "main": "src/TableSortFilterPlugin/index.tsx",
+  "type": "module",
+  "scripts": {
+    "dev": "echo 'Development server not configured yet'",
+    "build": "echo 'Build script not configured yet'",
+    "test": "echo 'No tests specified yet'"
+  },
+  "keywords": [
+    "lexical",
+    "table",
+    "sort",
+    "filter",
+    "plugin",
+    "react",
+    "typescript"
+  ],
+  "author": "Stanley Liang",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/StanleyLiang/TableSortFilterPlugin.git"
+  },
+  "bugs": {
+    "url": "https://github.com/StanleyLiang/TableSortFilterPlugin/issues"
+  },
+  "homepage": "https://github.com/StanleyLiang/TableSortFilterPlugin#readme",
+  "peerDependencies": {
+    "lexical": "^0.12.0",
+    "@lexical/react": "^0.12.0",
+    "@lexical/table": "^0.12.0",
+    "react": "^18.0.0"
+  },
+  "devDependencies": {
+    "@types/react": "^18.0.0",
+    "typescript": "^5.0.0"
+  }
+}

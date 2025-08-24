@@ -1,0 +1,42 @@
+/* TableSortFilterPlugin Styles */
+
+.PlaygroundEditorTheme__table > tr:first-of-type {
+  .PlaygroundEditorTheme__tableCellHeader {
+    position: relative;
+  }
+
+  .PlaygroundEditorTheme__tableCellHeader::after {
+    content: '↕️';
+    position: absolute;
+    right: 4px;
+    top: 50%;
+    transform: translateY(-50%);
+    cursor: pointer;
+    opacity: 0.7;
+    font-size: 12px;
+    background: rgba(255, 255, 255, 0.8);
+    border: 1px solid #ccc;
+    border-radius: 3px;
+    padding: 2px 4px;
+    line-height: 1;
+    transition: opacity 0.2s;
+    user-select: none;
+    z-index: 1;
+  }
+
+  .PlaygroundEditorTheme__tableCellHeader:hover::after {
+    opacity: 1;
+  }
+
+  .PlaygroundEditorTheme__tableCellHeader.sort-asc::after {
+    content: '↑';
+    opacity: 1;
+    font-weight: bold;
+  }
+
+  .PlaygroundEditorTheme__tableCellHeader.sort-desc::after {
+    content: '↓';
+    opacity: 1;
+    font-weight: bold;
+  }
+}
