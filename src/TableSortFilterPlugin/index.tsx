@@ -21,23 +21,18 @@ import {
 import {useEffect, useState} from 'react';
 
 import {
-  CLEAR_TABLE_FILTERS_COMMAND,
-  FILTER_TABLE_COLUMN_COMMAND,
   SORT_TABLE_COLUMN_COMMAND,
 } from './commands';
 import './styles.css';
-import type {SortDirection, TableFilterState, TableSortState} from './types';
+import type {SortDirection, TableSortState} from './types';
 import {
   $getTableData,
   $updateTableData,
-  filterTableData,
   sortTableData,
 } from './utils';
 
 // Re-export commands for external use
 export {
-  CLEAR_TABLE_FILTERS_COMMAND,
-  FILTER_TABLE_COLUMN_COMMAND,
   SORT_TABLE_COLUMN_COMMAND,
 };
 
@@ -88,7 +83,6 @@ export default function TableSortFilterPlugin(): JSX.Element | null {
   const isEditable = useLexicalEditable();
 
   const [sortStates, setSortStates] = useState<Map<string, TableSortState>>(new Map());
-  const [filterState, setFilterState] = useState<TableFilterState>({});
   const [originalTableData, setOriginalTableData] = useState<Map<string, string[][]>>(new Map());
 
   useEffect(() => {
@@ -119,58 +113,8 @@ export default function TableSortFilterPlugin(): JSX.Element | null {
       COMMAND_PRIORITY_EDITOR,
     );
 
-    // Register filter command
-    const removeFilterCommand = editor.registerCommand(
-      FILTER_TABLE_COLUMN_COMMAND,
-      ({columnIndex, filterValue}) => {
-        setFilterState((prev) => {
-          const newFilters = {...prev};
-          if (filterValue.trim() === '') {
-            delete newFilters[columnIndex];
-          } else {
-            newFilters[columnIndex] = filterValue;
-          }
-
-          // Apply filters
-          editor.update(() => {
-            const selection = $getSelection();
-            if ($isTableSelection(selection)) {
-              const tableNode = $findTableNode(selection.anchor.getNode());
-              if (tableNode) {
-                const data = $getTableData(tableNode);
-                const filteredData = filterTableData(data, newFilters);
-                $updateTableData(tableNode, filteredData);
-              }
-            }
-          });
-
-          return newFilters;
-        });
-        return true;
-      },
-      COMMAND_PRIORITY_EDITOR,
-    );
-
-    // Register clear filters command
-    const removeClearCommand = editor.registerCommand(
-      CLEAR_TABLE_FILTERS_COMMAND,
-      () => {
-        setFilterState({});
-        setSortStates(new Map());
-        setOriginalTableData(new Map());
-
-        // TODO: Restore original table data for filtering
-        // Currently only handles sorting data restoration
-
-        return true;
-      },
-      COMMAND_PRIORITY_EDITOR,
-    );
-
     return () => {
       removeSortCommand();
-      removeFilterCommand();
-      removeClearCommand();
     };
   }, [editor, isEditable]);
 
