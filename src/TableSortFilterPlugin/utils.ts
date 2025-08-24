@@ -8,6 +8,7 @@
 
 import {$isTableCellNode, $isTableRowNode, TableNode} from '@lexical/table';
 import {$createParagraphNode, $createTextNode} from 'lexical';
+import naturalCompare from 'natural-compare';
 
 import type {SortDirection, TableFilterState} from './types';
 
@@ -60,7 +61,7 @@ export function $updateTableData(tableNode: TableNode, data: string[][]): void {
   });
 }
 
-// Sort function
+// Sort function with natural comparison for mixed content
 export function sortTableData(
   data: string[][],
   columnIndex: number,
@@ -73,16 +74,13 @@ export function sortTableData(
     const aVal = a[columnIndex] || '';
     const bVal = b[columnIndex] || '';
 
-    // Try to sort as numbers first
-    const aNum = parseFloat(aVal);
-    const bNum = parseFloat(bVal);
-
-    if (!isNaN(aNum) && !isNaN(bNum)) {
-      return direction === 'asc' ? aNum - bNum : bNum - aNum;
-    }
-
-    // Sort as strings
-    const comparison = aVal.localeCompare(bVal);
+    // Use natural-compare for intelligent sorting of mixed content
+    // This handles numbers, strings, and mixed alphanumeric content correctly
+    // Examples: 
+    // - "item2" vs "item10" → "item2", "item10" (not "item10", "item2")
+    // - "1.5" vs "10.2" → "1.5", "10.2" (numeric comparison)
+    // - "abc" vs "def" → "abc", "def" (alphabetic comparison)
+    const comparison = naturalCompare(aVal, bVal);
     return direction === 'asc' ? comparison : -comparison;
   });
 

@@ -6,7 +6,10 @@ A powerful Lexical plugin that adds sorting and filtering capabilities to tables
 
 ### ✅ Currently Implemented
 - **Table Sorting**: Click table headers to sort columns in ascending/descending order
-- **Smart Sorting**: Automatically detects and sorts numbers vs text appropriately  
+- **Natural Sorting**: Uses `natural-compare` for intelligent mixed-content sorting
+  - ✅ `"item2"` → `"item10"` (not lexicographic `"item10"` → `"item2"`)
+  - ✅ Version numbers: `"v1.2.0"` → `"v1.9.5"` → `"v1.10.0"`
+  - ✅ Mixed data: Numbers come before text, properly ordered
 - **Visual Indicators**: Sort direction indicators (↑↓) on table headers
 - **Interactive UI**: Hover effects and click feedback on table headers
 
