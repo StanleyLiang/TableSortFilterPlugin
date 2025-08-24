@@ -176,7 +176,7 @@ export default function TableSortFilterPlugin(): JSX.Element | null {
 
 
 
-  // Handle click events on table headers
+  // Handle click events on table headers using event delegation on editor container
   useEffect(() => {
     if (!isEditable) return;
 
@@ -289,11 +289,16 @@ export default function TableSortFilterPlugin(): JSX.Element | null {
       });
     };
 
-    document.addEventListener('click', handleClick, true);
-    
-    return () => {
-      document.removeEventListener('click', handleClick, true);
-    };
+    // 使用事件代理：監聽編輯器容器而非整個 document
+    // 這樣範圍更精確，同時避免 DOM 重新渲染的問題
+    const editorElement = editor.getRootElement();
+    if (editorElement) {
+      editorElement.addEventListener('click', handleClick, true);
+      
+      return () => {
+        editorElement.removeEventListener('click', handleClick, true);
+      };
+    }
   }, [editor, isEditable, sortStates, originalTableData]);
 
   return null;
