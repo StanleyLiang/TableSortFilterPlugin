@@ -48,6 +48,7 @@ export default function TableSortFilterPlugin(): JSX.Element | null {
 
   const [sortStates, setSortStates] = useState<Map<string, TableSortState>>(new Map());
   const [filterState, setFilterState] = useState<TableFilterState>({});
+  const [originalTableData, setOriginalTableData] = useState<Map<string, string[][]>>(new Map());
 
   useEffect(() => {
     if (!isEditable) {
@@ -115,9 +116,10 @@ export default function TableSortFilterPlugin(): JSX.Element | null {
       () => {
         setFilterState({});
         setSortStates(new Map());
+        setOriginalTableData(new Map());
 
-        // TODO: Restore original table data
-        // This would require storing the original data when filters are first applied
+        // TODO: Restore original table data for filtering
+        // Currently only handles sorting data restoration
 
         return true;
       },
@@ -193,11 +195,32 @@ export default function TableSortFilterPlugin(): JSX.Element | null {
           if (targetTableNode) {
             const tableKey = targetTableNode.getKey();
             const currentSortState = sortStates.get(tableKey);
+            const data = $getTableData(targetTableNode);
             
-            // Determine sort direction based on this table's current state
-            let direction: SortDirection = 'asc';
-            if (currentSortState && currentSortState.columnIndex === columnIndex) {
-              direction = currentSortState.direction === 'asc' ? 'desc' : 'asc';
+            // Store original data if this is the first sort operation for this table
+            if (!originalTableData.has(tableKey)) {
+              setOriginalTableData(prev => new Map(prev).set(tableKey, data));
+            }
+            
+            // Determine next state: null → asc → desc → null (cycle)
+            let newSortState: TableSortState = null;
+            let dataToApply = data;
+            
+            if (!currentSortState || currentSortState.columnIndex !== columnIndex) {
+              // First click on this column: sort ascending
+              newSortState = {columnIndex, direction: 'asc'};
+              dataToApply = sortTableData(data, columnIndex, 'asc');
+            } else if (currentSortState.direction === 'asc') {
+              // Second click: sort descending
+              newSortState = {columnIndex, direction: 'desc'};
+              dataToApply = sortTableData(data, columnIndex, 'desc');
+            } else {
+              // Third click: cancel sort (restore original data)
+              newSortState = null;
+              const originalData = originalTableData.get(tableKey);
+              if (originalData) {
+                dataToApply = originalData;
+              }
             }
             
             // Clear sort classes only from this table's headers
@@ -206,16 +229,24 @@ export default function TableSortFilterPlugin(): JSX.Element | null {
               cell.classList.remove('sort-asc', 'sort-desc');
             });
             
-            // Add sort class to current cell
-            headerCell.classList.add(direction === 'asc' ? 'sort-asc' : 'sort-desc');
+            // Add sort class to current cell (if sorting)
+            if (newSortState) {
+              headerCell.classList.add(newSortState.direction === 'asc' ? 'sort-asc' : 'sort-desc');
+            }
             
-            // Execute sort
-            const data = $getTableData(targetTableNode);
-            const sortedData = sortTableData(data, columnIndex, direction);
-            $updateTableData(targetTableNode, sortedData);
+            // Apply the data
+            $updateTableData(targetTableNode, dataToApply);
             
             // Update sort state for this specific table
-            setSortStates(prev => new Map(prev).set(tableKey, {columnIndex, direction}));
+            if (newSortState) {
+              setSortStates(prev => new Map(prev).set(tableKey, newSortState));
+            } else {
+              setSortStates(prev => {
+                const newMap = new Map(prev);
+                newMap.delete(tableKey);
+                return newMap;
+              });
+            }
           }
         });
       }
@@ -226,7 +257,7 @@ export default function TableSortFilterPlugin(): JSX.Element | null {
     return () => {
       document.removeEventListener('click', handleClick, true);
     };
-  }, [editor, isEditable, sortStates]);
+  }, [editor, isEditable, sortStates, originalTableData]);
 
   return null;
 }
