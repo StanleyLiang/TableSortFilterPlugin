@@ -42,6 +42,47 @@ export {
 };
 
 
+// 檢查 header cell 是否有 pseudo-element (::after)
+function hasPseudoElement(headerCell: Element): boolean {
+  // 使用 getComputedStyle 檢查 ::after pseudo-element
+  const pseudoStyle = window.getComputedStyle(headerCell, '::after');
+  
+  // 檢查 content 屬性是否不是 'none' 或空字符串
+  const content = pseudoStyle.getPropertyValue('content');
+  
+  // CSS content 值 'none' 或 '""' 表示沒有內容
+  return content !== 'none' && content !== '""' && content !== '';
+}
+
+// 精確檢測是否點擊在 pseudo-element 按鈕區域
+function isPseudoElementClick(event: MouseEvent, headerCell: Element): boolean {
+  // 首先檢查是否真的有 pseudo-element
+  if (!hasPseudoElement(headerCell)) {
+    return false;
+  }
+  
+  // 使用 offsetX/offsetY (更簡單、性能更好)
+  const offsetX = event.offsetX;
+  const offsetY = event.offsetY;
+  const rect = headerCell.getBoundingClientRect();
+  
+  // 基於 CSS 中的實際按鈕位置計算
+  // right: 4px, padding: 2px 4px, 大約 20px 寬度
+  const buttonRightOffset = 4;
+  const buttonWidth = 20;
+  const buttonHeight = 20;
+  
+  const buttonLeft = rect.width - buttonRightOffset - buttonWidth;
+  const buttonTop = (rect.height - buttonHeight) / 2;
+  
+  return (
+    offsetX >= buttonLeft &&
+    offsetX <= rect.width - buttonRightOffset &&
+    offsetY >= buttonTop &&
+    offsetY <= buttonTop + buttonHeight
+  );
+}
+
 export default function TableSortFilterPlugin(): JSX.Element | null {
   const [editor] = useLexicalComposerContext();
   const isEditable = useLexicalEditable();
@@ -145,111 +186,107 @@ export default function TableSortFilterPlugin(): JSX.Element | null {
       
       if (!headerCell) return;
       
-      // Check if click is on the pseudo-element (sort button area)
-      const rect = headerCell.getBoundingClientRect();
-      const clickX = event.clientX - rect.left;
+      // 檢查是否點擊在 pseudo-element 區域
+      if (!isPseudoElementClick(event, headerCell)) return;
       
-      // Rough detection: if click is in the right portion of the cell
-      if (clickX > rect.width - 30) {
-        event.preventDefault();
-        event.stopPropagation();
+      event.preventDefault();
+      event.stopPropagation();
+      
+      // Find column index
+      const row = headerCell.parentElement;
+      if (!row) return;
+      
+      const cells = Array.from(row.children);
+      const columnIndex = cells.indexOf(headerCell);
+      
+      if (columnIndex === -1) return;
+      
+      // Find the table element that contains this header
+      const tableElement = headerCell.closest('table');
+      if (!tableElement) return;
+      
+      // Find and execute sort on the specific table
+      editor.update(() => {
+        const root = $getRoot();
+        let targetTableNode: TableNode | null = null;
+        let tableIndex = -1;
         
-        // Find column index
-        const row = headerCell.parentElement;
-        if (!row) return;
-        
-        const cells = Array.from(row.children);
-        const columnIndex = cells.indexOf(headerCell);
-        
-        if (columnIndex === -1) return;
-        
-        // Find the table element that contains this header
-        const tableElement = headerCell.closest('table');
-        if (!tableElement) return;
-        
-        // Find and execute sort on the specific table
-        editor.update(() => {
-          const root = $getRoot();
-          let targetTableNode: TableNode | null = null;
-          let tableIndex = -1;
-          
-          function traverse(node: any) {
-            if (node.getType && node.getType() === 'table') {
-              tableIndex++;
-              
-              // Match DOM table with Lexical table node by index
-              const allTables = document.querySelectorAll('table');
-              if (allTables[tableIndex] === tableElement) {
-                targetTableNode = node as TableNode;
-                return;
-              }
+        function traverse(node: any) {
+          if (node.getType && node.getType() === 'table') {
+            tableIndex++;
+            
+            // Match DOM table with Lexical table node by index
+            const allTables = document.querySelectorAll('table');
+            if (allTables[tableIndex] === tableElement) {
+              targetTableNode = node as TableNode;
+              return;
             }
-            if (node.getChildren) {
-              const children = node.getChildren();
-              children.forEach((child: any) => traverse(child));
+          }
+          if (node.getChildren) {
+            const children = node.getChildren();
+            children.forEach((child: any) => traverse(child));
+          }
+        }
+        
+        traverse(root);
+        
+        if (targetTableNode) {
+          const tableKey = targetTableNode.getKey();
+          const currentSortState = sortStates.get(tableKey);
+          const data = $getTableData(targetTableNode);
+          
+          // Store original data if this is the first sort operation for this table
+          if (!originalTableData.has(tableKey)) {
+            setOriginalTableData(prev => new Map(prev).set(tableKey, data));
+          }
+          
+          // Determine next state: null → asc → desc → null (cycle)
+          let newSortState: TableSortState = null;
+          let dataToApply = data;
+          
+          if (!currentSortState || currentSortState.columnIndex !== columnIndex) {
+            // First click on this column: sort ascending
+            newSortState = {columnIndex, direction: 'asc'};
+            dataToApply = sortTableData(data, columnIndex, 'asc');
+          } else if (currentSortState.direction === 'asc') {
+            // Second click: sort descending
+            newSortState = {columnIndex, direction: 'desc'};
+            dataToApply = sortTableData(data, columnIndex, 'desc');
+          } else {
+            // Third click: cancel sort (restore original data)
+            newSortState = null;
+            const originalData = originalTableData.get(tableKey);
+            if (originalData) {
+              dataToApply = originalData;
             }
           }
           
-          traverse(root);
+          // Clear sort classes only from this table's headers
+          const thisTableHeaders = tableElement.querySelectorAll('.PlaygroundEditorTheme__tableCellHeader');
+          thisTableHeaders.forEach(cell => {
+            cell.classList.remove('sort-asc', 'sort-desc');
+          });
           
-          if (targetTableNode) {
-            const tableKey = targetTableNode.getKey();
-            const currentSortState = sortStates.get(tableKey);
-            const data = $getTableData(targetTableNode);
-            
-            // Store original data if this is the first sort operation for this table
-            if (!originalTableData.has(tableKey)) {
-              setOriginalTableData(prev => new Map(prev).set(tableKey, data));
-            }
-            
-            // Determine next state: null → asc → desc → null (cycle)
-            let newSortState: TableSortState = null;
-            let dataToApply = data;
-            
-            if (!currentSortState || currentSortState.columnIndex !== columnIndex) {
-              // First click on this column: sort ascending
-              newSortState = {columnIndex, direction: 'asc'};
-              dataToApply = sortTableData(data, columnIndex, 'asc');
-            } else if (currentSortState.direction === 'asc') {
-              // Second click: sort descending
-              newSortState = {columnIndex, direction: 'desc'};
-              dataToApply = sortTableData(data, columnIndex, 'desc');
-            } else {
-              // Third click: cancel sort (restore original data)
-              newSortState = null;
-              const originalData = originalTableData.get(tableKey);
-              if (originalData) {
-                dataToApply = originalData;
-              }
-            }
-            
-            // Clear sort classes only from this table's headers
-            const thisTableHeaders = tableElement.querySelectorAll('.PlaygroundEditorTheme__tableCellHeader');
-            thisTableHeaders.forEach(cell => {
-              cell.classList.remove('sort-asc', 'sort-desc');
+          // Add sort class to current cell (if sorting)
+          if (newSortState) {
+            headerCell.classList.add(newSortState.direction === 'asc' ? 'sort-asc' : 'sort-desc');
+          }
+          
+          // Apply the data
+          $updateTableData(targetTableNode, dataToApply);
+          
+          // Update sort state for this specific table
+          if (newSortState) {
+            setSortStates(prev => new Map(prev).set(tableKey, newSortState));
+          } else {
+            setSortStates(prev => {
+              const newMap = new Map(prev);
+              newMap.delete(tableKey);
+              return newMap;
             });
-            
-            // Add sort class to current cell (if sorting)
-            if (newSortState) {
-              headerCell.classList.add(newSortState.direction === 'asc' ? 'sort-asc' : 'sort-desc');
-            }
-            
-            // Apply the data
-            $updateTableData(targetTableNode, dataToApply);
-            
-            // Update sort state for this specific table
-            if (newSortState) {
-              setSortStates(prev => new Map(prev).set(tableKey, newSortState));
-            } else {
-              setSortStates(prev => {
-                const newMap = new Map(prev);
-                newMap.delete(tableKey);
-                return newMap;
-              });
-            }
           }
-        });
-      }
+        }
+      });
     };
 
     document.addEventListener('click', handleClick, true);
