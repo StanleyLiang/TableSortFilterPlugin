@@ -155,12 +155,15 @@ export default function TableSortFilterPlugin(): JSX.Element | null {
         let targetTableNode: TableNode | null = null;
         let tableIndex = -1;
         
+        // Get tables from editor root element instead of entire document
+        const editorElement = editor.getRootElement();
+        const allTables = editorElement?.querySelectorAll('table') || [];
+        
         function traverse(node: any) {
           if (node.getType && node.getType() === 'table') {
             tableIndex++;
             
-            // Match DOM table with Lexical table node by index
-            const allTables = document.querySelectorAll('table');
+            // Match DOM table with Lexical table node by index within editor scope
             if (allTables[tableIndex] === tableElement) {
               targetTableNode = node as TableNode;
               return;
