@@ -126,22 +126,17 @@ export default function TableSortFilterPlugin(): JSX.Element | null {
     if (!isEditable) return;
 
     const handleClick = (event: MouseEvent) => {
-      console.log('🖱️ Table header clicked!');
       const target = event.target as HTMLElement;
       const headerCell = target.closest('.PlaygroundEditorTheme__tableCellHeader');
       
       if (!headerCell) {
-        console.log('❌ Not a header cell click');
         return;
       }
-      console.log('✅ Header cell found');
       
       // 檢查是否點擊在 pseudo-element 區域
       if (!isPseudoElementClick(event, headerCell)) {
-        console.log('❌ Not clicked on pseudo-element');
         return;
       }
-      console.log('✅ Pseudo-element clicked');
       
       event.preventDefault();
       event.stopPropagation();
