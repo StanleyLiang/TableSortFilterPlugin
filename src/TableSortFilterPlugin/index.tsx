@@ -26,9 +26,10 @@ import {
 import './styles.css';
 import type {SortDirection, TableSortState} from './types';
 import {
-  $getTableData,
-  $updateTableData,
-  sortTableData,
+  $getTableCellData,
+  $updateTableDataWithFormatting,
+  sortTableCellData,
+  type CellData,
 } from './utils';
 
 // Re-export commands for external use
@@ -83,7 +84,7 @@ export default function TableSortFilterPlugin(): JSX.Element | null {
   const isEditable = useLexicalEditable();
 
   const [sortStates, setSortStates] = useState<Map<string, TableSortState>>(new Map());
-  const [originalTableData, setOriginalTableData] = useState<Map<string, string[][]>>(new Map());
+  const [originalTableData, setOriginalTableData] = useState<Map<string, CellData[][]>>(new Map());
 
   useEffect(() => {
     if (!isEditable) {
@@ -99,9 +100,9 @@ export default function TableSortFilterPlugin(): JSX.Element | null {
           if ($isTableSelection(selection)) {
             const tableNode = $findTableNode(selection.anchor.getNode());
             if (tableNode) {
-              const data = $getTableData(tableNode);
-              const sortedData = sortTableData(data, columnIndex, direction);
-              $updateTableData(tableNode, sortedData);
+              const data = $getTableCellData(tableNode);
+              const sortedData = sortTableCellData(data, columnIndex, direction);
+              $updateTableDataWithFormatting(tableNode, sortedData);
               // Update sort state for this specific table
               const tableKey = tableNode.getKey();
               setSortStates(prev => new Map(prev).set(tableKey, {columnIndex, direction}));
@@ -125,13 +126,22 @@ export default function TableSortFilterPlugin(): JSX.Element | null {
     if (!isEditable) return;
 
     const handleClick = (event: MouseEvent) => {
+      console.log('🖱️ Table header clicked!');
       const target = event.target as HTMLElement;
       const headerCell = target.closest('.PlaygroundEditorTheme__tableCellHeader');
       
-      if (!headerCell) return;
+      if (!headerCell) {
+        console.log('❌ Not a header cell click');
+        return;
+      }
+      console.log('✅ Header cell found');
       
       // 檢查是否點擊在 pseudo-element 區域
-      if (!isPseudoElementClick(event, headerCell)) return;
+      if (!isPseudoElementClick(event, headerCell)) {
+        console.log('❌ Not clicked on pseudo-element');
+        return;
+      }
+      console.log('✅ Pseudo-element clicked');
       
       event.preventDefault();
       event.stopPropagation();
@@ -180,7 +190,7 @@ export default function TableSortFilterPlugin(): JSX.Element | null {
         if (targetTableNode) {
           const tableKey = targetTableNode.getKey();
           const currentSortState = sortStates.get(tableKey);
-          const data = $getTableData(targetTableNode);
+          const data = $getTableCellData(targetTableNode);
           
           // Store original data if this is the first sort operation for this table
           if (!originalTableData.has(tableKey)) {
@@ -194,11 +204,11 @@ export default function TableSortFilterPlugin(): JSX.Element | null {
           if (!currentSortState || currentSortState.columnIndex !== columnIndex) {
             // First click on this column: sort ascending
             newSortState = {columnIndex, direction: 'asc'};
-            dataToApply = sortTableData(data, columnIndex, 'asc');
+            dataToApply = sortTableCellData(data, columnIndex, 'asc');
           } else if (currentSortState.direction === 'asc') {
             // Second click: sort descending
             newSortState = {columnIndex, direction: 'desc'};
-            dataToApply = sortTableData(data, columnIndex, 'desc');
+            dataToApply = sortTableCellData(data, columnIndex, 'desc');
           } else {
             // Third click: cancel sort (restore original data)
             newSortState = null;
@@ -219,8 +229,8 @@ export default function TableSortFilterPlugin(): JSX.Element | null {
             headerCell.classList.add(newSortState.direction === 'asc' ? 'sort-asc' : 'sort-desc');
           }
           
-          // Apply the data
-          $updateTableData(targetTableNode, dataToApply);
+          // Apply the data with formatting preservation
+          $updateTableDataWithFormatting(targetTableNode, dataToApply);
           
           // Update sort state for this specific table
           if (newSortState) {
