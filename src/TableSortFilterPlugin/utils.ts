@@ -269,146 +269,22 @@ export function $getTableCellData(tableNode: TableNode): CellData[][] {
   return data;
 }
 
-// Helper function to create deep copies of cell content before any modifications
-function $createCellContentCopy(
-  cellNode: TableCellNode,
-): SerializedLexicalNode[] {
-  const copies: SerializedLexicalNode[] = [];
-  const children = cellNode.getChildren();
-
-  children.forEach((child) => {
-    try {
-      const serialized = child.exportJSON();
-      copies.push(serialized);
-    } catch (error) {
-      // Fallback: create a simple text node representation
-      const textContent = child.getTextContent();
-      if (textContent) {
-        copies.push({
-          children: [
-            {
-              detail: 0,
-              format: 0,
-              mode: 'normal',
-              style: '',
-              text: textContent,
-              type: 'text',
-              version: 1,
-            },
-          ],
-          type: 'paragraph',
-          version: 1,
-        });
-      }
-    }
-  });
-
-  return copies;
-}
-
-// Custom function to recreate nodes with proper LinkNode support
-function $recreateNodeWithLinkSupport(serializedNode: SerializedLexicalNode): any {
-  if (serializedNode.type === 'paragraph') {
-    const paragraph = $createParagraphNode();
-    
-    // Manually handle paragraph children
-    if (serializedNode.children && serializedNode.children.length > 0) {
-      serializedNode.children.forEach((childSerialized: any) => {
-        if (childSerialized.type === 'link') {
-          // Create LinkNode manually
-          const linkNode = $createLinkNode(childSerialized.url || '#');
-          
-          // Add text children to the link
-          if (childSerialized.children && childSerialized.children.length > 0) {
-            childSerialized.children.forEach((linkChildSerialized: any) => {
-              if (linkChildSerialized.type === 'text') {
-                const textNode = $createTextNode(linkChildSerialized.text || '');
-                linkNode.append(textNode);
-              }
-            });
-          } else {
-            // Fallback: if no children, create text from the link's content
-            const textNode = $createTextNode(childSerialized.text || '');
-            linkNode.append(textNode);
-          }
-          
-          paragraph.append(linkNode);
-        } else if (childSerialized.type === 'text') {
-          const textNode = $createTextNode(childSerialized.text || '');
-          paragraph.append(textNode);
-        } else {
-          // Try standard deserialization for other types
-          const recreatedChild = $parseSerializedNode(childSerialized);
-          if (recreatedChild) {
-            paragraph.append(recreatedChild);
-          }
-        }
-      });
-    }
-    
-    return paragraph;
-  } else if (serializedNode.type === 'link') {
-    // Direct LinkNode creation
-    const linkNode = $createLinkNode(serializedNode.url || '#');
-    
-    if (serializedNode.children && serializedNode.children.length > 0) {
-      serializedNode.children.forEach((childSerialized: any) => {
-        if (childSerialized.type === 'text') {
-          const textNode = $createTextNode(childSerialized.text || '');
-          linkNode.append(textNode);
-        }
-      });
-    }
-    
-    return linkNode;
-  } else {
-    // Use standard deserialization for other node types
-    return $parseSerializedNode(serializedNode);
-  }
-}
-
-// Helper function to update table with cell data (uses deep copies for formatting preservation)
-export function $updateTableDataWithFormatting(
+// Safe node movement by collecting content first, then applying
+export function $updateTableDataWithDirectMovement(
   tableNode: TableNode,
   data: CellData[][],
 ): void {
   const rows = tableNode.getChildren();
 
-  // Step 1: Create deep copies of all cell content BEFORE any modifications
-  const cellContentCopies: (SerializedLexicalNode[] | null)[][] = [];
-  
-  data.forEach((rowData, rowIdx) => {
-    const rowCopies: (SerializedLexicalNode[] | null)[] = [];
-    rowData.forEach((cellData, cellIdx) => {
-      
-      if (cellData.serializedChildren && cellData.serializedChildren.length > 0) {
-        
-        // Check for LinkNodes in serialized children
-        cellData.serializedChildren.forEach((child, idx) => {
-          if (child.type === 'paragraph' && child.children && child.children.length > 0) {
-            child.children.forEach((grandChild: any, gIdx: number) => {
-              if (grandChild.type === 'link') {
-              }
-            });
-          }
-        });
-        
-        // Use pre-serialized data if available
-        rowCopies.push([...cellData.serializedChildren]);
-      } else if (cellData.cellNode && cellData.cellNode.getChildren().length > 0) {
-        // Create fresh copy from live node
-        const copies = $createCellContentCopy(cellData.cellNode);
-        rowCopies.push(copies);
-      } else {
-        // No formatting to preserve, just text
-        rowCopies.push(null);
-      }
-    });
-    cellContentCopies.push(rowCopies);
-  });
+  // Get current table state fresh (not from cached cellNode references)
+  const currentTableData = $getTableCellData(tableNode);
 
-  // Step 2: Now safely apply the copies to target cells
+  // Step 1: Collect all content that needs to be moved (before any modifications)
+  const contentToMove: { targetCell: TableCellNode; content: LexicalNode[] | string }[][] = [];
+  
   data.forEach((rowData, rowIndex) => {
+    const rowContentToMove: { targetCell: TableCellNode; content: LexicalNode[] | string }[] = [];
+    
     if (rowIndex < rows.length && $isTableRowNode(rows[rowIndex])) {
       const row = rows[rowIndex];
       const cells = row.getChildren();
@@ -416,52 +292,68 @@ export function $updateTableDataWithFormatting(
       rowData.forEach((cellData, cellIndex) => {
         if (cellIndex < cells.length && $isTableCellNode(cells[cellIndex])) {
           const targetCell = cells[cellIndex];
-          const cellCopies = cellContentCopies[rowIndex]?.[cellIndex];
-
-          // Clear the target cell first
-          targetCell.clear();
-
-          if (cellCopies && cellCopies.length > 0) {
-            // Apply formatting from deep copies
-            try {
-              cellCopies.forEach((serializedChild) => {
-                
-                // Special debug for paragraphs with children
-                if (serializedChild.type === 'paragraph' && serializedChild.children && serializedChild.children.length > 0) {
+          
+          if (cellData.textContent !== targetCell.getTextContent()) {
+            // Content needs to be updated - find source cell by text content
+            let sourceCell: TableCellNode | null = null;
+            
+            // Search through all current cells to find the one with matching content
+            for (let searchRowIndex = 0; searchRowIndex < currentTableData.length; searchRowIndex++) {
+              for (let searchCellIndex = 0; searchCellIndex < currentTableData[searchRowIndex].length; searchCellIndex++) {
+                const searchCellData = currentTableData[searchRowIndex][searchCellIndex];
+                if (searchCellData.textContent === cellData.textContent && searchCellData.cellNode) {
+                  sourceCell = searchCellData.cellNode;
+                  break;
                 }
-                
-                const recreatedChild = $recreateNodeWithLinkSupport(serializedChild);
-                
-                // Debug the recreated paragraph's children
-                if (recreatedChild && recreatedChild.getType() === 'paragraph') {
-                  const recreatedChildren = recreatedChild.getChildren();
-                }
-                
-                if (recreatedChild) {
-                  targetCell.append(recreatedChild);
-                }
-              });
-            } catch (error) {
-              // Fallback to text-only
-              if (cellData.textContent.trim()) {
-                const paragraph = $createParagraphNode();
-                const textNode = $createTextNode(cellData.textContent);
-                paragraph.append(textNode);
-                targetCell.append(paragraph);
               }
+              if (sourceCell) break;
             }
-          } else if (cellData.textContent.trim()) {
-            // No formatting, just apply text
-            const paragraph = $createParagraphNode();
-            const textNode = $createTextNode(cellData.textContent);
-            paragraph.append(textNode);
-            targetCell.append(paragraph);
+            
+            if (sourceCell) {
+              // Collect children from found source cell
+              const children = sourceCell.getChildren().slice();
+              rowContentToMove.push({ targetCell, content: children });
+            } else if (cellData.textContent.trim()) {
+              // Text-only content - create new
+              rowContentToMove.push({ targetCell, content: cellData.textContent });
+            } else {
+              // No change needed
+              rowContentToMove.push({ targetCell, content: [] });
+            }
+          } else {
+            // No change needed
+            rowContentToMove.push({ targetCell, content: [] });
           }
         }
       });
     }
+    contentToMove.push(rowContentToMove);
+  });
+
+  // Step 2: Apply the collected content (safe from interference)
+  contentToMove.forEach((rowContentToMove) => {
+    rowContentToMove.forEach((cellContentToMove) => {
+      const { targetCell, content } = cellContentToMove;
+      
+      if (Array.isArray(content) && content.length > 0) {
+        // Move nodes
+        targetCell.clear();
+        content.forEach((child) => {
+          targetCell.append(child);
+        });
+      } else if (typeof content === 'string' && content.trim()) {
+        // Create text content
+        targetCell.clear();
+        const paragraph = $createParagraphNode();
+        const textNode = $createTextNode(content);
+        paragraph.append(textNode);
+        targetCell.append(paragraph);
+      }
+      // No action needed for empty content or same position
+    });
   });
 }
+
 
 // Sort function for cell data with formatting preservation
 export function sortTableCellData(

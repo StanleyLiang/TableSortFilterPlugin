@@ -24,12 +24,12 @@ import {
   SORT_TABLE_COLUMN_COMMAND,
 } from './commands';
 import './styles.css';
-import type {SortDirection, TableSortState} from './types';
+import type {TableSortState} from './types';
 import {
   $getTableCellData,
-  $updateTableDataWithFormatting,
-  sortTableCellData,
+  $updateTableDataWithDirectMovement,
   type CellData,
+  sortTableCellData,
 } from './utils';
 
 // Re-export commands for external use
@@ -102,7 +102,7 @@ export default function TableSortFilterPlugin(): JSX.Element | null {
             if (tableNode) {
               const data = $getTableCellData(tableNode);
               const sortedData = sortTableCellData(data, columnIndex, direction);
-              $updateTableDataWithFormatting(tableNode, sortedData);
+              $updateTableDataWithDirectMovement(tableNode, sortedData);
               // Update sort state for this specific table
               const tableKey = tableNode.getKey();
               setSortStates(prev => new Map(prev).set(tableKey, {columnIndex, direction}));
@@ -164,19 +164,23 @@ export default function TableSortFilterPlugin(): JSX.Element | null {
         const editorElement = editor.getRootElement();
         const allTables = editorElement?.querySelectorAll('table') || [];
         
-        function traverse(node: any) {
-          if (node.getType && node.getType() === 'table') {
+        function traverse(node: unknown) {
+          const typedNode = node as {
+            getType?: () => string;
+            getChildren?: () => unknown[];
+          };
+          if (typedNode.getType && typedNode.getType() === 'table') {
             tableIndex++;
-            
+
             // Match DOM table with Lexical table node by index within editor scope
             if (allTables[tableIndex] === tableElement) {
-              targetTableNode = node as TableNode;
+              targetTableNode = typedNode as TableNode;
               return;
             }
           }
-          if (node.getChildren) {
-            const children = node.getChildren();
-            children.forEach((child: any) => traverse(child));
+          if (typedNode.getChildren) {
+            const children = typedNode.getChildren();
+            children.forEach((child: unknown) => traverse(child));
           }
         }
         
@@ -225,7 +229,7 @@ export default function TableSortFilterPlugin(): JSX.Element | null {
           }
           
           // Apply the data with formatting preservation
-          $updateTableDataWithFormatting(targetTableNode, dataToApply);
+          $updateTableDataWithDirectMovement(targetTableNode, dataToApply);
           
           // Update sort state for this specific table
           if (newSortState) {
