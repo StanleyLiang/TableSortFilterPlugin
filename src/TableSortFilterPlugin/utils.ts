@@ -14,12 +14,9 @@ import {
   TableCellNode,
   TableNode,
 } from '@lexical/table';
-import {$isLinkNode, $createLinkNode} from '@lexical/link';
 import {
   $createParagraphNode,
   $createTextNode,
-  $parseSerializedNode,
-  SerializedLexicalNode,
 } from 'lexical';
 import naturalCompare from 'natural-compare';
 
@@ -27,7 +24,6 @@ import naturalCompare from 'natural-compare';
 export interface CellData {
   textContent: string;
   cellNode: TableCellNode;
-  serializedChildren: SerializedLexicalNode[];
 }
 
 
@@ -45,218 +41,8 @@ export function $getTableCellData(tableNode: TableNode): CellData[][] {
         if ($isTableCellNode(cell)) {
           const cellText = cell.getTextContent();
 
-          // Serialize all children to preserve formatting
-          const serializedChildren: SerializedLexicalNode[] = [];
-          const children = cell.getChildren();
-
-          children.forEach((child) => {
-            const childText = child.getTextContent();
-            const childType = child.getType();
-
-
-            try {
-              const serialized = child.exportJSON();
-
-              // Check if this is a paragraph - always manually serialize children to preserve LinkNodes
-              if (childType === 'paragraph') {
-                // Always manually serialize the actual children of the paragraph to ensure LinkNodes are preserved
-                const actualChildren = child.getChildren();
-
-                const manualChildren: SerializedLexicalNode[] = [];
-                actualChildren.forEach((paragraphChild) => {
-                  const childContent = paragraphChild.getTextContent();
-                  const childType = paragraphChild.getType();
-
-                  try {
-                    const childSerialized = paragraphChild.exportJSON();
-                    
-                    // Special handling for LinkNode to ensure children are serialized
-                    if (childType === 'link') {
-                      // Manual serialization of LinkNode children if they're missing
-                      if (!childSerialized.children || childSerialized.children.length === 0) {
-                        const linkChildren: SerializedLexicalNode[] = [];
-                        const linkNodeChildren = paragraphChild.getChildren();
-                        
-                        linkNodeChildren.forEach((linkChild) => {
-                          try {
-                            const linkChildSerialized = linkChild.exportJSON();
-                            linkChildren.push(linkChildSerialized);
-                          } catch (error) {
-                            linkChildren.push({
-                              detail: 0,
-                              format: 0,
-                              mode: 'normal',
-                              style: '',
-                              text: linkChild.getTextContent(),
-                              type: 'text',
-                              version: 1,
-                            });
-                          }
-                        });
-                        
-                        // Update the serialized LinkNode with manually serialized children
-                        childSerialized.children = linkChildren;
-                      }
-                    }
-                    
-                    manualChildren.push(childSerialized);
-                  } catch (error) {
-                    
-                    // Enhanced fallback for different node types
-                    if (childType === 'link') {
-                      // Special handling for LinkNode fallback
-                      const url = (paragraphChild as any).getURL?.() || '#';
-                      manualChildren.push({
-                        children: [
-                          {
-                            detail: 0,
-                            format: 0,
-                            mode: 'normal',
-                            style: '',
-                            text: childContent,
-                            type: 'text',
-                            version: 1,
-                          },
-                        ],
-                        rel: 'noopener noreferrer',
-                        target: null,
-                        title: null,
-                        type: 'link',
-                        url: url,
-                        version: 1,
-                      });
-                    } else {
-                      // Standard text fallback
-                      manualChildren.push({
-                        detail: 0,
-                        format: 0,
-                        mode: 'normal',
-                        style: '',
-                        text: childContent,
-                        type: 'text',
-                        version: 1,
-                      });
-                    }
-                  }
-                });
-
-                const manualSerialized = {
-                  ...serialized,
-                  children: manualChildren,
-                };
-                serializedChildren.push(manualSerialized);
-              }
-              // Check if this is a link node with text content but empty children
-              else if (
-                childType === 'link' &&
-                childText &&
-                (!serialized.children || serialized.children.length === 0)
-              ) {
-                // Manually serialize the actual children of the link node
-                const actualChildren = child.getChildren();
-
-                const manualChildren: SerializedLexicalNode[] = [];
-                actualChildren.forEach((linkChild) => {
-                  const linkChildContent = linkChild.getTextContent();
-
-                  try {
-                    const linkChildSerialized = linkChild.exportJSON();
-                    manualChildren.push(linkChildSerialized);
-                  } catch (error) {
-                    // Fallback for link children
-                    manualChildren.push({
-                      detail: 0,
-                      format: 0,
-                      mode: 'normal',
-                      style: '',
-                      text: linkChildContent,
-                      type: 'text',
-                      version: 1,
-                    });
-                  }
-                });
-
-                const manualSerialized = {
-                  ...serialized,
-                  children: manualChildren,
-                };
-                serializedChildren.push(manualSerialized);
-              } else {
-                serializedChildren.push(serialized);
-              }
-            } catch (error) {
-              // Enhanced fallback: try to preserve link information if it's a LinkNode
-              const textContent = child.getTextContent();
-              if (textContent) {
-                if (childType === 'link') {
-                  // Try to preserve link as much as possible
-                  try {
-                    // Check if we can get URL from the node
-                    const linkNode = child;
-                    const url = (linkNode as any).getURL?.() || '#';
-                    
-                    serializedChildren.push({
-                      children: [
-                        {
-                          detail: 0,
-                          format: 0,
-                          mode: 'normal',
-                          style: '',
-                          text: textContent,
-                          type: 'text',
-                          version: 1,
-                        },
-                      ],
-                      rel: 'noopener noreferrer',
-                      target: null,
-                      title: null,
-                      type: 'link',
-                      url: url,
-                      version: 1,
-                    });
-                  } catch (linkError) {
-                    // If link fallback fails, use paragraph fallback
-                    serializedChildren.push({
-                      children: [
-                        {
-                          detail: 0,
-                          format: 0,
-                          mode: 'normal',
-                          style: '',
-                          text: textContent,
-                          type: 'text',
-                          version: 1,
-                        },
-                      ],
-                      type: 'paragraph',
-                      version: 1,
-                    });
-                  }
-                } else {
-                  // Standard fallback for non-link nodes
-                  serializedChildren.push({
-                    children: [
-                      {
-                        detail: 0,
-                        format: 0,
-                        mode: 'normal',
-                        style: '',
-                        text: textContent,
-                        type: 'text',
-                        version: 1,
-                      },
-                    ],
-                    type: 'paragraph',
-                    version: 1,
-                  });
-                }
-              }
-            }
-          });
-
           rowData.push({
             cellNode: cell,
-            serializedChildren,
             textContent: cellText,
           });
         }
