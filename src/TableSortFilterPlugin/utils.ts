@@ -24,6 +24,7 @@ import naturalCompare from 'natural-compare';
 export interface CellData {
   textContent: string;
   cellNode: TableCellNode;
+  cellKey: string; // Unique identifier for each cell
 }
 
 
@@ -40,10 +41,12 @@ export function $getTableCellData(tableNode: TableNode): CellData[][] {
       cells.forEach((cell) => {
         if ($isTableCellNode(cell)) {
           const cellText = cell.getTextContent();
+          const cellKey = cell.getKey(); // Use Lexical's unique key
 
           rowData.push({
             cellNode: cell,
             textContent: cellText,
+            cellKey: cellKey,
           });
         }
       });
@@ -79,15 +82,15 @@ export function $updateTableDataWithDirectMovement(
         if (cellIndex < cells.length && $isTableCellNode(cells[cellIndex])) {
           const targetCell = cells[cellIndex];
           
-          if (cellData.textContent !== targetCell.getTextContent()) {
-            // Content needs to be updated - find source cell by text content
+          if (cellData.cellKey !== targetCell.getKey()) {
+            // Content needs to be updated - find source cell by unique key
             let sourceCell: TableCellNode | null = null;
             
-            // Search through all current cells to find the one with matching content
+            // Search through all current cells to find the one with matching cellKey
             for (let searchRowIndex = 0; searchRowIndex < currentTableData.length; searchRowIndex++) {
               for (let searchCellIndex = 0; searchCellIndex < currentTableData[searchRowIndex].length; searchCellIndex++) {
                 const searchCellData = currentTableData[searchRowIndex][searchCellIndex];
-                if (searchCellData.textContent === cellData.textContent && searchCellData.cellNode) {
+                if (searchCellData.cellKey === cellData.cellKey) {
                   sourceCell = searchCellData.cellNode;
                   break;
                 }
