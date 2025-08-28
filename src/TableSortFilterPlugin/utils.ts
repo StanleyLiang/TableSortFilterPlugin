@@ -58,6 +58,53 @@ export function $getTableCellData(tableNode: TableNode): CellData[][] {
   return data;
 }
 
+// Function to capture original children data by position
+export function $captureOriginalTableChildren(tableNode: TableNode): Map<string, LexicalNode[]> {
+  const originalChildren = new Map<string, LexicalNode[]>();
+  const rows = tableNode.getChildren();
+
+  rows.forEach((row, rowIndex) => {
+    if ($isTableRowNode(row)) {
+      const cells = row.getChildren();
+      cells.forEach((cell, cellIndex) => {
+        if ($isTableCellNode(cell)) {
+          const key = `${rowIndex}-${cellIndex}`;
+          const children = cell.getChildren().slice(); // Create a copy
+          originalChildren.set(key, children);
+        }
+      });
+    }
+  });
+
+  return originalChildren;
+}
+
+// Function to restore original children data by position
+export function $restoreOriginalTableChildren(
+  tableNode: TableNode,
+  originalChildren: Map<string, LexicalNode[]>
+): void {
+  const rows = tableNode.getChildren();
+
+  rows.forEach((row, rowIndex) => {
+    if ($isTableRowNode(row)) {
+      const cells = row.getChildren();
+      cells.forEach((cell, cellIndex) => {
+        if ($isTableCellNode(cell)) {
+          const key = `${rowIndex}-${cellIndex}`;
+          const children = originalChildren.get(key);
+          if (children) {
+            cell.clear();
+            children.forEach((child) => {
+              cell.append(child);
+            });
+          }
+        }
+      });
+    }
+  });
+}
+
 // Safe node movement by collecting content first, then applying
 export function $updateTableDataWithDirectMovement(
   tableNode: TableNode,

@@ -13,7 +13,9 @@ import { useEffect, useState } from "react";
 import "./styles.css";
 import type { TableSortState } from "./types";
 import {
+  $captureOriginalTableChildren,
   $getTableCellData,
+  $restoreOriginalTableChildren,
   $updateTableDataWithDirectMovement,
   type CellData,
   sortTableCellData,
@@ -66,8 +68,8 @@ export default function TableSortFilterPlugin(): JSX.Element | null {
   const [sortStates, setSortStates] = useState<Map<string, TableSortState>>(
     new Map()
   );
-  const [originalTableData, setOriginalTableData] = useState<
-    Map<string, CellData[][]>
+  const [originalTableChildren, setOriginalTableChildren] = useState<
+    Map<string, Map<string, LexicalNode[]>>
   >(new Map());
 
   // Handle click events on table headers using event delegation on editor container
@@ -140,14 +142,15 @@ export default function TableSortFilterPlugin(): JSX.Element | null {
           const currentSortState = sortStates.get(tableKey);
           const data = $getTableCellData(targetTableNode);
 
-          // Store original data if this is the first sort operation for this table
-          if (!originalTableData.has(tableKey)) {
-            setOriginalTableData((prev) => new Map(prev).set(tableKey, data));
+          // Store original children data if this is the first sort operation for this table
+          if (!originalTableChildren.has(tableKey)) {
+            const children = $captureOriginalTableChildren(targetTableNode);
+            setOriginalTableChildren((prev) => new Map(prev).set(tableKey, children));
           }
 
           // Determine next state: null → asc → desc → null (cycle)
           let newSortState: TableSortState = null;
-          let dataToApply = data;
+          let shouldRestoreOriginal = false;
 
           if (
             !currentSortState ||
@@ -155,17 +158,20 @@ export default function TableSortFilterPlugin(): JSX.Element | null {
           ) {
             // First click on this column: sort ascending
             newSortState = { columnIndex, direction: "asc" };
-            dataToApply = sortTableCellData(data, columnIndex, "asc");
+            const dataToApply = sortTableCellData(data, columnIndex, "asc");
+            $updateTableDataWithDirectMovement(targetTableNode, dataToApply);
           } else if (currentSortState.direction === "asc") {
             // Second click: sort descending
             newSortState = { columnIndex, direction: "desc" };
-            dataToApply = sortTableCellData(data, columnIndex, "desc");
+            const dataToApply = sortTableCellData(data, columnIndex, "desc");
+            $updateTableDataWithDirectMovement(targetTableNode, dataToApply);
           } else {
             // Third click: cancel sort (restore original data)
             newSortState = null;
-            const originalData = originalTableData.get(tableKey);
-            if (originalData) {
-              dataToApply = originalData;
+            shouldRestoreOriginal = true;
+            const originalChildren = originalTableChildren.get(tableKey);
+            if (originalChildren) {
+              $restoreOriginalTableChildren(targetTableNode, originalChildren);
             }
           }
 
@@ -183,9 +189,6 @@ export default function TableSortFilterPlugin(): JSX.Element | null {
               newSortState.direction === "asc" ? "sort-asc" : "sort-desc"
             );
           }
-
-          // Apply the data with formatting preservation
-          $updateTableDataWithDirectMovement(targetTableNode, dataToApply);
 
           // Update sort state for this specific table
           if (newSortState) {
@@ -211,7 +214,7 @@ export default function TableSortFilterPlugin(): JSX.Element | null {
         editorElement.removeEventListener("click", handleClick, true);
       };
     }
-  }, [editor, sortStates, originalTableData]);
+  }, [editor, sortStates, originalTableChildren]);
 
   return null;
 }
