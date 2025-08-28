@@ -17,6 +17,7 @@ import {
 import {
   $createParagraphNode,
   $createTextNode,
+  $isParagraphNode,
   type LexicalNode,
 } from "lexical";
 import naturalCompare from "natural-compare";
@@ -45,7 +46,13 @@ export function $getTableCellData(tableNode: TableNode): CellData[][] {
 
       cells.forEach((cell) => {
         if ($isTableCellNode(cell)) {
-          const cellText = cell.getTextContent();
+          const children = cell.getChildren();
+          
+          // Check if all children are ParagraphNode
+          const hasNonParagraphNode = children.some(child => !$isParagraphNode(child));
+          
+          // If cell contains non-ParagraphNode, set cellText to empty string
+          const cellText = hasNonParagraphNode ? '' : cell.getTextContent();
           const cellKey = cell.getKey(); // Use Lexical's unique key
 
           rowData.push({
