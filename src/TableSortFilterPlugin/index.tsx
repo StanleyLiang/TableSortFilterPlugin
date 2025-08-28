@@ -7,8 +7,7 @@
  */
 
 import { useLexicalComposerContext } from "@lexical/react/LexicalComposerContext";
-import { TableNode } from "@lexical/table";
-import { $getRoot } from "lexical";
+import { $getRoot, type LexicalNode } from "lexical";
 import { useEffect, useState } from "react";
 import "./styles.css";
 import type { TableSortState } from "./types";
@@ -17,50 +16,15 @@ import {
   $getTableCellData,
   $restoreOriginalTableChildren,
   $updateTableDataWithDirectMovement,
-  type CellData,
+  findTableNodeByElement,
+  isPseudoElementClick,
   sortTableCellData,
 } from "./utils";
 
-// 檢查 header cell 是否有 pseudo-element (::after)
-function hasPseudoElement(headerCell: Element): boolean {
-  // 使用 getComputedStyle 檢查 ::after pseudo-element
-  const pseudoStyle = window.getComputedStyle(headerCell, "::after");
-
-  // 檢查 content 屬性是否不是 'none' 或空字符串
-  const content = pseudoStyle.getPropertyValue("content");
-
-  // CSS content 值 'none' 或 '""' 表示沒有內容
-  return content !== "none" && content !== '""' && content !== "";
-}
-
-// 精確檢測是否點擊在 pseudo-element 按鈕區域
-function isPseudoElementClick(event: MouseEvent, headerCell: Element): boolean {
-  // 首先檢查是否真的有 pseudo-element
-  if (!hasPseudoElement(headerCell)) {
-    return false;
-  }
-
-  // 使用 offsetX/offsetY (更簡單、性能更好)
-  const offsetX = event.offsetX;
-  const offsetY = event.offsetY;
-  const rect = headerCell.getBoundingClientRect();
-
-  // 基於 CSS 中的實際按鈕位置計算
-  // right: 4px, padding: 2px 4px, 大約 20px 寬度
-  const buttonRightOffset = 4;
-  const buttonWidth = 20;
-  const buttonHeight = 20;
-
-  const buttonLeft = rect.width - buttonRightOffset - buttonWidth;
-  const buttonTop = (rect.height - buttonHeight) / 2;
-
-  return (
-    offsetX >= buttonLeft &&
-    offsetX <= rect.width - buttonRightOffset &&
-    offsetY >= buttonTop &&
-    offsetY <= buttonTop + buttonHeight
-  );
-}
+// CSS class names
+const TABLE_CELL_HEADER_CLASS = ".PlaygroundEditorTheme__tableCellHeader";
+const SORT_ASC_CLASS = "sort-asc";
+const SORT_DESC_CLASS = "sort-desc";
 
 export default function TableSortFilterPlugin(): JSX.Element | null {
   const [editor] = useLexicalComposerContext();
@@ -74,17 +38,15 @@ export default function TableSortFilterPlugin(): JSX.Element | null {
 
   // Handle click events on table headers using event delegation on editor container
   useEffect(() => {
-    const handleClick = (event: MouseEvent) => {
+    const handleClick = (event: MouseEvent): void => {
       const target = event.target as HTMLElement;
-      const headerCell = target.closest(
-        ".PlaygroundEditorTheme__tableCellHeader"
-      );
+      const headerCell = target.closest(TABLE_CELL_HEADER_CLASS);
 
       if (!headerCell) {
         return;
       }
 
-      // 檢查是否點擊在 pseudo-element 區域
+      // Check if click is in pseudo-element area
       if (!isPseudoElementClick(event, headerCell)) {
         return;
       }
@@ -94,63 +56,52 @@ export default function TableSortFilterPlugin(): JSX.Element | null {
 
       // Find column index
       const row = headerCell.parentElement;
-      if (!row) return;
+      if (!row) {
+        console.warn("TableSortFilterPlugin: Header cell has no parent row");
+        return;
+      }
 
       const cells = Array.from(row.children);
       const columnIndex = cells.indexOf(headerCell);
 
-      if (columnIndex === -1) return;
+      if (columnIndex === -1) {
+        console.warn("TableSortFilterPlugin: Could not find column index");
+        return;
+      }
 
       // Find the table element that contains this header
       const tableElement = headerCell.closest("table");
-      if (!tableElement) return;
+      if (!tableElement) {
+        console.warn("TableSortFilterPlugin: Header cell not inside table");
+        return;
+      }
 
       // Find and execute sort on the specific table
       editor.update(() => {
         const root = $getRoot();
-        let targetTableNode: TableNode | null = null;
-        let tableIndex = -1;
-
-        // Get tables from editor root element instead of entire document
         const editorElement = editor.getRootElement();
         const allTables = editorElement?.querySelectorAll("table") || [];
 
-        function traverse(node: unknown) {
-          const typedNode = node as {
-            getType?: () => string;
-            getChildren?: () => unknown[];
-          };
-          if (typedNode.getType && typedNode.getType() === "table") {
-            tableIndex++;
-
-            // Match DOM table with Lexical table node by index within editor scope
-            if (allTables[tableIndex] === tableElement) {
-              targetTableNode = typedNode as TableNode;
-              return;
-            }
-          }
-          if (typedNode.getChildren) {
-            const children = typedNode.getChildren();
-            children.forEach((child: unknown) => traverse(child));
-          }
-        }
-
-        traverse(root);
+        const targetTableNode = findTableNodeByElement(
+          root,
+          tableElement,
+          allTables as NodeListOf<Element>
+        );
 
         if (targetTableNode) {
           const tableKey = targetTableNode.getKey();
           const currentSortState = sortStates.get(tableKey);
-          const data = $getTableCellData(targetTableNode);
 
           // Store original children data if this is the first sort operation for this table
           if (!originalTableChildren.has(tableKey)) {
             const children = $captureOriginalTableChildren(targetTableNode);
-            setOriginalTableChildren((prev) => new Map(prev).set(tableKey, children));
+            setOriginalTableChildren((prev) =>
+              new Map(prev).set(tableKey, children)
+            );
           }
 
           // Determine next state: null → asc → desc → null (cycle)
           let newSortState: TableSortState = null;
-          let shouldRestoreOriginal = false;
 
           if (
             !currentSortState ||
@@ -158,17 +109,18 @@ export default function TableSortFilterPlugin(): JSX.Element | null {
           ) {
             // First click on this column: sort ascending
             newSortState = { columnIndex, direction: "asc" };
+            const data = $getTableCellData(targetTableNode);
             const dataToApply = sortTableCellData(data, columnIndex, "asc");
             $updateTableDataWithDirectMovement(targetTableNode, dataToApply);
           } else if (currentSortState.direction === "asc") {
             // Second click: sort descending
             newSortState = { columnIndex, direction: "desc" };
+            const data = $getTableCellData(targetTableNode);
             const dataToApply = sortTableCellData(data, columnIndex, "desc");
             $updateTableDataWithDirectMovement(targetTableNode, dataToApply);
           } else {
             // Third click: cancel sort (restore original data)
             newSortState = null;
-            shouldRestoreOriginal = true;
             const originalChildren = originalTableChildren.get(tableKey);
             if (originalChildren) {
               $restoreOriginalTableChildren(targetTableNode, originalChildren);
@@ -177,16 +129,18 @@ export default function TableSortFilterPlugin(): JSX.Element | null {
 
           // Clear sort classes only from this table's headers
           const thisTableHeaders = tableElement.querySelectorAll(
-            ".PlaygroundEditorTheme__tableCellHeader"
+            TABLE_CELL_HEADER_CLASS
           );
           thisTableHeaders.forEach((cell) => {
-            cell.classList.remove("sort-asc", "sort-desc");
+            cell.classList.remove(SORT_ASC_CLASS, SORT_DESC_CLASS);
           });
 
           // Add sort class to current cell (if sorting)
           if (newSortState) {
             headerCell.classList.add(
-              newSortState.direction === "asc" ? "sort-asc" : "sort-desc"
+              newSortState.direction === "asc"
+                ? SORT_ASC_CLASS
+                : SORT_DESC_CLASS
             );
           }
 
@@ -204,8 +158,8 @@ export default function TableSortFilterPlugin(): JSX.Element | null {
       });
     };
 
-    // 使用事件代理：監聽編輯器容器而非整個 document
-    // 這樣範圍更精確，同時避免 DOM 重新渲染的問題
+    // Use event delegation: listen on editor container instead of entire document
+    // This provides more precise scope and avoids DOM re-rendering issues
     const editorElement = editor.getRootElement();
     if (editorElement) {
       editorElement.addEventListener("click", handleClick, true);

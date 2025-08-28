@@ -9,11 +9,7 @@
 // Types for sort and filter state
 export type TableSortState = {
   columnIndex: number;
-  direction: 'asc' | 'desc';
+  direction: "asc" | "desc";
 } | null;
 
-export type TableFilterState = {
-  [columnIndex: number]: string;
-};
-
-export type SortDirection = 'asc' | 'desc';
+export type SortDirection = "asc" | "desc";
