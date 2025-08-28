@@ -217,7 +217,20 @@ export function sortTableCellData(
     const aVal = a[columnIndex]?.textContent || "";
     const bVal = b[columnIndex]?.textContent || "";
 
-    // Use natural-compare for intelligent sorting of mixed content
+    // Check if values are empty (after trimming)
+    const aIsEmpty = aVal.trim().length === 0;
+    const bIsEmpty = bVal.trim().length === 0;
+
+    // Both empty - maintain original order
+    if (aIsEmpty && bIsEmpty) {
+      return 0;
+    }
+
+    // One is empty - empty goes to end regardless of sort direction
+    if (aIsEmpty) return 1; // a goes after b
+    if (bIsEmpty) return -1; // b goes after a
+
+    // Both have content - use natural-compare for intelligent sorting
     const comparison = naturalCompare(aVal, bVal);
     return direction === "asc" ? comparison : -comparison;
   });
