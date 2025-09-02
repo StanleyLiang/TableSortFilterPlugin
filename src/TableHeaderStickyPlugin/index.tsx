@@ -3,26 +3,35 @@
  *
  * This source code is licensed under the MIT license found in the
  * LICENSE file in the root directory of this source tree.
- *
  */
 
 import './styles.css';
 
 import {useLexicalComposerContext} from '@lexical/react/LexicalComposerContext';
-import {useLexicalEditable} from '@lexical/react/useLexicalEditable';
 import {throttle} from 'lodash-es';
 import {useCallback, useEffect, useRef, useState} from 'react';
 
-interface StickyTableHeader {
-  id: string;
-  originalTable: HTMLTableElement;
-  stickyContainer: HTMLDivElement;
-  stickyTable: HTMLTableElement;
-}
+import {
+  addClickEventHandlers,
+  applyStickyContainerStyles,
+  applyStickyTableTransform,
+  calculateStickyPosition,
+  createStickyHeader,
+  CSS_SELECTORS,
+  findAllTables,
+  generateTableId,
+  handleStickyHeaderError,
+  shouldShowStickyHeader,
+  type StickyTableHeader,
+  syncColumnWidthsAndContent,
+  syncSortStates,
+  tableHasSortableHeaders,
+  THROTTLE_CONFIG,
+  TIMING_CONFIG,
+} from './utils';
 
 export default function TableHeaderStickyPlugin(): JSX.Element | null {
   const [editor] = useLexicalComposerContext();
-  const isEditable = useLexicalEditable();
   const [stickyHeaders, setStickyHeaders] = useState<
     Map<string, StickyTableHeader>
   >(new Map());
@@ -41,6 +50,7 @@ export default function TableHeaderStickyPlugin(): JSX.Element | null {
       if (!editorElement) {
         return;
       }
+      
       const {originalTable, stickyContainer, stickyTable} = stickyHeader;
 
       try {
@@ -53,94 +63,27 @@ export default function TableHeaderStickyPlugin(): JSX.Element | null {
 
         const headerRect = headerRow.getBoundingClientRect();
 
-        // Check if header is above the viewport top (out of view)
-        const isHeaderOutOfView = headerRect.bottom < 0;
-
-        // Check if table is still visible (any part of it)
-        const isTableVisible =
-          tableRect.bottom > 0 && tableRect.top < window.innerHeight;
-
-        // Check if table top is still below the viewport (hasn't been scrolled completely past)
-        const isTableCompletelyAboveView = tableRect.bottom < 0;
-
-        const shouldShow =
-          isHeaderOutOfView && isTableVisible && !isTableCompletelyAboveView;
-
-        if (shouldShow) {
-          // Find toolbar height to avoid overlapping
-          const toolbar = document.querySelector('.toolbar');
-          const toolbarHeight = toolbar
-            ? toolbar.getBoundingClientRect().height
-            : 0;
-
-          // Get editor-scroller bounds to constrain sticky header width
-          const editorScroller = document.querySelector('.editor-scroller');
-          const scrollerRect = editorScroller
-            ? editorScroller.getBoundingClientRect()
-            : editorElement.getBoundingClientRect();
-
-          // Get horizontal scroll offset from editor-scroller
-          const horizontalScrollOffset = editorScroller
-            ? editorScroller.scrollLeft
-            : 0;
-
-          // Calculate constrained width and position
-          const maxWidth = scrollerRect.width;
-
-          // Position sticky container to match the visible portion of the table
-          const leftPosition = Math.max(tableRect.left, scrollerRect.left);
-          const rightBoundary = Math.min(tableRect.right, scrollerRect.right);
-          const availableWidth = rightBoundary - leftPosition;
-
-          // Show sticky header
-          stickyContainer.style.display = 'block';
-          stickyContainer.style.position = 'fixed';
-          stickyContainer.style.top = `${toolbarHeight}px`; // Position below toolbar
-          stickyContainer.style.left = `${leftPosition}px`;
-          stickyContainer.style.width = `${availableWidth}px`;
-          stickyContainer.style.maxWidth = `${maxWidth}px`;
-          stickyContainer.style.overflow = 'hidden';
-          stickyContainer.style.zIndex = '9999';
-
-          // Position sticky table to match the original table exactly
-          // Calculate how much the original table has been scrolled out of view
-          const tableVisibleLeft = Math.max(
-            0,
-            scrollerRect.left - tableRect.left,
+        if (shouldShowStickyHeader(headerRect, tableRect)) {
+          // Calculate position and apply styles
+          const position = calculateStickyPosition(
+            tableRect,
+            editorElement,
           );
-          stickyTable.style.transform = `translateX(-${tableVisibleLeft}px)`;
 
-
-          // Sync column widths and content
-          const originalCells = headerRow.querySelectorAll('th, td');
-          const stickyCells = stickyTable.querySelectorAll('th, td');
-
-          originalCells.forEach((originalCell, index) => {
-            if (stickyCells[index]) {
-              const cellRect = originalCell.getBoundingClientRect();
-              (
-                stickyCells[index] as HTMLElement
-              ).style.width = `${cellRect.width}px`;
-              (
-                stickyCells[index] as HTMLElement
-              ).style.minWidth = `${cellRect.width}px`;
-              (
-                stickyCells[index] as HTMLElement
-              ).style.maxWidth = `${cellRect.width}px`;
-
-              // Sync content every time - this ensures content is always up-to-date
-              (stickyCells[index] as HTMLElement).innerHTML = (
-                originalCell as HTMLElement
-              ).innerHTML;
-            }
-          });
+          applyStickyContainerStyles(stickyContainer, position);
+          applyStickyTableTransform(stickyTable, position.tableVisibleLeft);
+          syncColumnWidthsAndContent(headerRow, stickyTable);
         } else {
           // Hide sticky header
           stickyContainer.style.display = 'none';
         }
       } catch (error) {
-        console.warn('Error updating sticky header:', error);
-        stickyContainer.style.display = 'none';
+        handleStickyHeaderError(
+          error as Error,
+          stickyHeader.id,
+          'update',
+          stickyContainer,
+        );
       }
     },
     [editor],
@@ -152,7 +95,7 @@ export default function TableHeaderStickyPlugin(): JSX.Element | null {
       stickyHeadersRef.current.forEach((stickyHeader) => {
         updateStickyHeader(stickyHeader);
       });
-    }, 16), // ~60fps
+    }, THROTTLE_CONFIG.SCROLL),
     [updateStickyHeader],
   );
 
@@ -167,225 +110,32 @@ export default function TableHeaderStickyPlugin(): JSX.Element | null {
       stickyHeadersRef.current.forEach((stickyHeader) => {
         updateStickyHeader(stickyHeader);
       });
-    }, 100),
+    }, THROTTLE_CONFIG.RESIZE),
     [updateStickyHeader],
   );
 
   // Handle horizontal scroll events with throttling
   const handleHorizontalScroll = useCallback(
     throttle(() => {
-      const editorScroller = document.querySelector('.editor-scroller');
-      const scrollLeft = editorScroller ? editorScroller.scrollLeft : 0;
       stickyHeadersRef.current.forEach((stickyHeader) => {
         updateStickyHeader(stickyHeader);
       });
-    }, 16), // ~60fps for smooth scroll sync
+    }, THROTTLE_CONFIG.HORIZONTAL_SCROLL),
     [updateStickyHeader],
   );
 
   // Sync sticky header sort states with original table
-  const syncSortStates = useCallback(() => {
+  const handleSyncSortStates = useCallback(() => {
     stickyHeadersRef.current.forEach((stickyHeader) => {
-      const {originalTable, stickyTable} = stickyHeader;
-
-      // Copy sort classes from original to sticky
-      const originalHeaders = originalTable.querySelectorAll(
-        '.PlaygroundEditorTheme__tableCellHeader',
-      );
-      const stickyTableHeaders = stickyTable.querySelectorAll(
-        '.PlaygroundEditorTheme__tableCellHeader',
-      );
-
-      originalHeaders.forEach((originalHeader, index) => {
-        const stickyTableHeader = stickyTableHeaders[index];
-        if (stickyTableHeader) {
-          // Remove existing sort classes
-          stickyTableHeader.classList.remove('sort-asc', 'sort-desc');
-
-          // Copy sort classes from original
-          if (originalHeader.classList.contains('sort-asc')) {
-            stickyTableHeader.classList.add('sort-asc');
-          } else if (originalHeader.classList.contains('sort-desc')) {
-            stickyTableHeader.classList.add('sort-desc');
-          }
-        }
-      });
+      syncSortStates(stickyHeader.originalTable, stickyHeader.stickyTable);
     });
   }, []);
 
   useEffect(() => {
-    if (!isEditable) {
-      return;
-    }
-
     const editorElement = editor.getRootElement();
     if (!editorElement) {
       return;
     }
-
-    // Function to find all tables in the editor
-    const findAllTables = (): HTMLTableElement[] => {
-      return Array.from(editorElement.querySelectorAll('table'));
-    };
-
-    // Function to create sticky header for a table
-    const createStickyHeader = (
-      table: HTMLTableElement,
-      tableId: string,
-    ): StickyTableHeader => {
-      // Create sticky container
-      const stickyContainer = document.createElement('div');
-      stickyContainer.className = 'table-header-sticky-container';
-      stickyContainer.setAttribute('data-table-id', tableId);
-
-      // Create a new table and manually build the header row
-      const stickyTable = document.createElement('table');
-      stickyTable.className = table.className + ' table-header-sticky';
-
-      // Get the original header row
-      const originalHeaderRow = table.querySelector('tr');
-      if (originalHeaderRow) {
-        // Create new header row
-        const newHeaderRow = document.createElement('tr');
-
-        // Get all header cells from original table
-        const originalCells = originalHeaderRow.querySelectorAll('th, td');
-
-        originalCells.forEach((originalCell) => {
-          // Create new cell with same tag name
-          const newCell = document.createElement(
-            originalCell.tagName.toLowerCase(),
-          );
-
-          // Copy all attributes
-          for (let i = 0; i < originalCell.attributes.length; i++) {
-            const attr = originalCell.attributes[i];
-            newCell.setAttribute(attr.name, attr.value);
-          }
-
-          // Copy innerHTML to preserve all nested content and formatting
-          newCell.innerHTML = originalCell.innerHTML;
-
-          newHeaderRow.appendChild(newCell);
-        });
-
-        // Create table body and append the header row
-        const tbody = document.createElement('tbody');
-        tbody.appendChild(newHeaderRow);
-        stickyTable.appendChild(tbody);
-      }
-
-      stickyContainer.appendChild(stickyTable);
-
-      // Add click event handlers to sticky header cells
-      const stickyHeaderCells = stickyTable.querySelectorAll(
-        '.PlaygroundEditorTheme__tableCellHeader',
-      );
-      const originalHeaderCells = table.querySelectorAll(
-        '.PlaygroundEditorTheme__tableCellHeader',
-      );
-
-      stickyHeaderCells.forEach((stickyCell, index) => {
-        stickyCell.addEventListener('click', (event) => {
-          // Remove scroll listener to prevent interference during sort state changes
-          if (handleScrollRef.current) {
-            window.removeEventListener('scroll', handleScrollRef.current);
-          }
-
-          // Forward the click to the corresponding original header cell
-          const originalCell = originalHeaderCells[index];
-          if (originalCell) {
-            // Calculate the relative position within the original cell
-            const stickyRect = stickyCell.getBoundingClientRect();
-            const originalRect = originalCell.getBoundingClientRect();
-
-            // Calculate offsetX and offsetY relative to the original cell
-            const relativeX = event.clientX - stickyRect.left;
-            const relativeY = event.clientY - stickyRect.top;
-
-            // Create a synthetic click event for the original cell
-            const syntheticEvent = new MouseEvent('click', {
-              bubbles: true,
-              cancelable: true,
-              clientX: originalRect.left + relativeX,
-              clientY: originalRect.top + relativeY,
-            });
-
-            // Set offsetX and offsetY properties manually
-            Object.defineProperty(syntheticEvent, 'offsetX', {
-              value: relativeX,
-              writable: false,
-            });
-            Object.defineProperty(syntheticEvent, 'offsetY', {
-              value: relativeY,
-              writable: false,
-            });
-
-            // Dispatch the synthetic event to the original cell
-            originalCell.dispatchEvent(syntheticEvent);
-          }
-
-          // Re-add scroll listener after a short delay to allow sort state to settle
-          setTimeout(() => {
-            if (handleScrollRef.current) {
-              window.addEventListener('scroll', handleScrollRef.current, {
-                passive: true,
-              });
-            }
-          }, 100); // 100ms delay to allow DOM updates to complete
-        });
-      });
-
-      // Position the sticky container
-      const tableRect = table.getBoundingClientRect();
-      const editorRect = editorElement.getBoundingClientRect();
-
-      stickyContainer.style.position = 'fixed';
-      stickyContainer.style.top = `${editorRect.top}px`;
-      stickyContainer.style.left = `${tableRect.left}px`;
-      stickyContainer.style.width = `${tableRect.width}px`;
-      stickyContainer.style.zIndex = '1000';
-      stickyContainer.style.display = 'none'; // Initially hidden
-
-      // Append to body
-      document.body.appendChild(stickyContainer);
-
-      return {
-        id: tableId,
-        originalTable: table,
-        stickyContainer,
-        stickyTable,
-      };
-    };
-
-    // Check if a table has sortable headers (with pseudo-elements from TableSortFilterPlugin)
-    const tableHasSortableHeaders = (table: HTMLTableElement): boolean => {
-      const headerCells = table.querySelectorAll(
-        '.PlaygroundEditorTheme__tableCellHeader',
-      );
-
-      // If no header cells with the sortable class, it's not sortable
-      if (headerCells.length === 0) {
-        return false;
-      }
-
-      // Strategy 2: Check if any header cell has pseudo-element content (sort indicators)
-      // This covers the case where no sort is active but headers are still sortable
-      for (const headerCell of headerCells) {
-        const pseudoStyle = window.getComputedStyle(
-          headerCell as Element,
-          '::after',
-        );
-        const content = pseudoStyle.getPropertyValue('content');
-
-        // CSS content values 'none' or '""' indicate no pseudo-element content
-        if (content !== 'none' && content !== '""' && content !== '') {
-          return true; // Found at least one sortable header
-        }
-      }
-
-      return false; // No sortable headers found
-    };
 
     // Function to setup intersection observer for a table
     const setupTableObserver = (table: HTMLTableElement) => {
@@ -394,20 +144,25 @@ export default function TableHeaderStickyPlugin(): JSX.Element | null {
         return null; // Skip tables without sort functionality
       }
 
-      const tableId = `table-${Date.now()}-${Math.random()
-        .toString(36)
-        .substr(2, 9)}`;
+      const tableId = generateTableId();
       table.setAttribute('data-sticky-table-id', tableId);
 
-      const stickyHeader = createStickyHeader(table, tableId);
-      setStickyHeaders((prev) => new Map(prev).set(tableId, stickyHeader));
+      const stickyHeader = createStickyHeader(table, tableId, editorElement);
+      
+      // Add click event handlers
+      addClickEventHandlers(
+        stickyHeader.stickyTable,
+        stickyHeader.originalTable,
+        handleScrollRef,
+      );
 
+      setStickyHeaders((prev) => new Map(prev).set(tableId, stickyHeader));
       return stickyHeader;
     };
 
     // Initialize sticky headers for existing tables
     const initializeStickyHeaders = () => {
-      const tables = findAllTables();
+      const tables = findAllTables(editorElement);
       tables.forEach((table) => {
         if (!table.hasAttribute('data-sticky-table-id')) {
           setupTableObserver(table);
@@ -417,7 +172,7 @@ export default function TableHeaderStickyPlugin(): JSX.Element | null {
 
     // Cleanup orphaned sticky headers (for tables that no longer exist)
     const cleanupOrphanedHeaders = () => {
-      const currentTables = findAllTables();
+      const currentTables = findAllTables(editorElement);
       const orphanedIds: string[] = [];
 
       stickyHeadersRef.current.forEach((stickyHeader, tableId) => {
@@ -466,7 +221,7 @@ export default function TableHeaderStickyPlugin(): JSX.Element | null {
     window.addEventListener('resize', handleResize);
 
     // Add horizontal scroll listener to editor-scroller
-    const editorScroller = document.querySelector('.editor-scroller');
+    const editorScroller = document.querySelector(CSS_SELECTORS.EDITOR_SCROLLER);
     if (editorScroller) {
       editorScroller.addEventListener('scroll', handleHorizontalScroll, {
         passive: true,
@@ -514,7 +269,7 @@ export default function TableHeaderStickyPlugin(): JSX.Element | null {
           mutation.attributeName === 'class' &&
           mutation.target instanceof Element &&
           mutation.target.classList.contains(
-            'PlaygroundEditorTheme__tableCellHeader',
+            CSS_SELECTORS.TABLE_CELL_HEADER.slice(1), // Remove leading dot
           )
         ) {
           shouldSyncSortStates = true;
@@ -528,13 +283,13 @@ export default function TableHeaderStickyPlugin(): JSX.Element | null {
             cleanupOrphanedHeaders();
           }
           initializeStickyHeaders();
-          syncSortStates();
-        }, 100);
+          handleSyncSortStates();
+        }, TIMING_CONFIG.DOM_UPDATE_DELAY);
       } else if (shouldCleanupOrphanedHeaders) {
         cleanupOrphanedHeaders();
       } else if (shouldSyncSortStates) {
         // Sync sort states immediately
-        syncSortStates();
+        handleSyncSortStates();
       }
     });
 
@@ -547,8 +302,8 @@ export default function TableHeaderStickyPlugin(): JSX.Element | null {
 
     // Periodically sync sort states to ensure consistency
     const sortSyncInterval = setInterval(() => {
-      syncSortStates();
-    }, 1000);
+      handleSyncSortStates();
+    }, TIMING_CONFIG.SORT_SYNC_INTERVAL);
 
     // Cleanup on unmount
     return () => {
@@ -557,7 +312,7 @@ export default function TableHeaderStickyPlugin(): JSX.Element | null {
       window.removeEventListener('resize', handleResize);
 
       // Remove horizontal scroll listener
-      const editorScroller = document.querySelector('.editor-scroller');
+      const editorScroller = document.querySelector(CSS_SELECTORS.EDITOR_SCROLLER);
       if (editorScroller) {
         editorScroller.removeEventListener('scroll', handleHorizontalScroll);
       }
@@ -567,11 +322,10 @@ export default function TableHeaderStickyPlugin(): JSX.Element | null {
     };
   }, [
     editor,
-    isEditable,
     handleScroll,
     handleResize,
     handleHorizontalScroll,
-    syncSortStates,
+    handleSyncSortStates,
   ]);
 
   return null;
