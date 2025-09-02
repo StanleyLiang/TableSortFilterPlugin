@@ -40,7 +40,6 @@ export default function TableHeaderStickyPlugin(): JSX.Element | null {
       if (!editorElement) {
         return;
       }
-      console.log({editorElement});
       const {originalTable, stickyContainer, stickyTable} = stickyHeader;
 
       try {
@@ -76,17 +75,22 @@ export default function TableHeaderStickyPlugin(): JSX.Element | null {
 
           // Get editor-scroller bounds to constrain sticky header width
           const editorScroller = document.querySelector('.editor-scroller');
-          const scrollerRect = editorScroller 
+          const scrollerRect = editorScroller
             ? editorScroller.getBoundingClientRect()
             : editorElement.getBoundingClientRect();
 
+          // Get horizontal scroll offset from editor-scroller
+          const horizontalScrollOffset = editorScroller
+            ? editorScroller.scrollLeft
+            : 0;
+
           // Calculate constrained width and position
           const maxWidth = scrollerRect.width;
+
+          // Position sticky container to match the visible portion of the table
           const leftPosition = Math.max(tableRect.left, scrollerRect.left);
-          const availableWidth = Math.min(
-            tableRect.width,
-            scrollerRect.right - leftPosition,
-          );
+          const rightBoundary = Math.min(tableRect.right, scrollerRect.right);
+          const availableWidth = rightBoundary - leftPosition;
 
           // Show sticky header
           stickyContainer.style.display = 'block';
@@ -97,6 +101,28 @@ export default function TableHeaderStickyPlugin(): JSX.Element | null {
           stickyContainer.style.maxWidth = `${maxWidth}px`;
           stickyContainer.style.overflow = 'hidden';
           stickyContainer.style.zIndex = '9999';
+
+          // Position sticky table to match the original table exactly
+          // Calculate how much the original table has been scrolled out of view
+          const tableVisibleLeft = Math.max(
+            0,
+            scrollerRect.left - tableRect.left,
+          );
+          stickyTable.style.transform = `translateX(-${tableVisibleLeft}px)`;
+
+          // Debug: Log scroll alignment values
+          if (horizontalScrollOffset > 0) {
+            console.log('Scroll Debug:', {
+              horizontalScrollOffset,
+              tableVisibleLeft,
+              tableLeft: tableRect.left,
+              tableRight: tableRect.right,
+              scrollerLeft: scrollerRect.left,
+              scrollerRight: scrollerRect.right,
+              leftPosition,
+              availableWidth,
+            });
+          }
 
           // Sync column widths and content
           const originalCells = headerRow.querySelectorAll('th, td');
@@ -150,6 +176,16 @@ export default function TableHeaderStickyPlugin(): JSX.Element | null {
         updateStickyHeader(stickyHeader);
       });
     }, 100),
+    [updateStickyHeader],
+  );
+
+  // Handle horizontal scroll events with throttling
+  const handleHorizontalScroll = useCallback(
+    throttle(() => {
+      stickyHeadersRef.current.forEach((stickyHeader) => {
+        updateStickyHeader(stickyHeader);
+      });
+    }, 16), // ~60fps for smooth scroll sync
     [updateStickyHeader],
   );
 
@@ -387,6 +423,14 @@ export default function TableHeaderStickyPlugin(): JSX.Element | null {
     window.addEventListener('scroll', handleScroll, {passive: true});
     window.addEventListener('resize', handleResize);
 
+    // Add horizontal scroll listener to editor-scroller
+    const editorScroller = document.querySelector('.editor-scroller');
+    if (editorScroller) {
+      editorScroller.addEventListener('scroll', handleHorizontalScroll, {
+        passive: true,
+      });
+    }
+
     // Use MutationObserver to watch for new tables and sort state changes
     const mutationObserver = new MutationObserver((mutations) => {
       let shouldReinitialize = false;
@@ -469,10 +513,24 @@ export default function TableHeaderStickyPlugin(): JSX.Element | null {
       cleanup();
       window.removeEventListener('scroll', handleScroll);
       window.removeEventListener('resize', handleResize);
+
+      // Remove horizontal scroll listener
+      const editorScroller = document.querySelector('.editor-scroller');
+      if (editorScroller) {
+        editorScroller.removeEventListener('scroll', handleHorizontalScroll);
+      }
+
       mutationObserver.disconnect();
       clearInterval(sortSyncInterval);
     };
-  }, [editor, isEditable, handleScroll, handleResize, syncSortStates]);
+  }, [
+    editor,
+    isEditable,
+    handleScroll,
+    handleResize,
+    handleHorizontalScroll,
+    syncSortStates,
+  ]);
 
   return null;
 }
