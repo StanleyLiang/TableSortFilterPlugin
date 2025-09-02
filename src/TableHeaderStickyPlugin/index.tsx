@@ -27,6 +27,7 @@ export default function TableHeaderStickyPlugin(): JSX.Element | null {
     Map<string, StickyTableHeader>
   >(new Map());
   const stickyHeadersRef = useRef<Map<string, StickyTableHeader>>(new Map());
+  const handleScrollRef = useRef<(() => void) | null>(null);
 
   // Keep ref in sync with state
   useEffect(() => {
@@ -53,7 +54,6 @@ export default function TableHeaderStickyPlugin(): JSX.Element | null {
         const headerRect = headerRow.getBoundingClientRect();
 
         // Check if header is above the viewport top (out of view)
-        // Use viewport coordinates for more reliable detection
         const isHeaderOutOfView = headerRect.bottom < 0;
 
         // Check if table is still visible (any part of it)
@@ -110,19 +110,6 @@ export default function TableHeaderStickyPlugin(): JSX.Element | null {
           );
           stickyTable.style.transform = `translateX(-${tableVisibleLeft}px)`;
 
-          // Debug: Log scroll alignment values
-          if (horizontalScrollOffset > 0) {
-            console.log('Scroll Debug:', {
-              horizontalScrollOffset,
-              tableVisibleLeft,
-              tableLeft: tableRect.left,
-              tableRight: tableRect.right,
-              scrollerLeft: scrollerRect.left,
-              scrollerRight: scrollerRect.right,
-              leftPosition,
-              availableWidth,
-            });
-          }
 
           // Sync column widths and content
           const originalCells = headerRow.querySelectorAll('th, td');
@@ -169,6 +156,11 @@ export default function TableHeaderStickyPlugin(): JSX.Element | null {
     [updateStickyHeader],
   );
 
+  // Store the scroll handler in ref for removal
+  useEffect(() => {
+    handleScrollRef.current = handleScroll;
+  }, [handleScroll]);
+
   // Handle resize events with throttling
   const handleResize = useCallback(
     throttle(() => {
@@ -182,6 +174,8 @@ export default function TableHeaderStickyPlugin(): JSX.Element | null {
   // Handle horizontal scroll events with throttling
   const handleHorizontalScroll = useCallback(
     throttle(() => {
+      const editorScroller = document.querySelector('.editor-scroller');
+      const scrollLeft = editorScroller ? editorScroller.scrollLeft : 0;
       stickyHeadersRef.current.forEach((stickyHeader) => {
         updateStickyHeader(stickyHeader);
       });
@@ -293,6 +287,11 @@ export default function TableHeaderStickyPlugin(): JSX.Element | null {
 
       stickyHeaderCells.forEach((stickyCell, index) => {
         stickyCell.addEventListener('click', (event) => {
+          // Remove scroll listener to prevent interference during sort state changes
+          if (handleScrollRef.current) {
+            window.removeEventListener('scroll', handleScrollRef.current);
+          }
+
           // Forward the click to the corresponding original header cell
           const originalCell = originalHeaderCells[index];
           if (originalCell) {
@@ -325,6 +324,15 @@ export default function TableHeaderStickyPlugin(): JSX.Element | null {
             // Dispatch the synthetic event to the original cell
             originalCell.dispatchEvent(syntheticEvent);
           }
+
+          // Re-add scroll listener after a short delay to allow sort state to settle
+          setTimeout(() => {
+            if (handleScrollRef.current) {
+              window.addEventListener('scroll', handleScrollRef.current, {
+                passive: true,
+              });
+            }
+          }, 100); // 100ms delay to allow DOM updates to complete
         });
       });
 
@@ -350,8 +358,42 @@ export default function TableHeaderStickyPlugin(): JSX.Element | null {
       };
     };
 
+    // Check if a table has sortable headers (with pseudo-elements from TableSortFilterPlugin)
+    const tableHasSortableHeaders = (table: HTMLTableElement): boolean => {
+      const headerCells = table.querySelectorAll(
+        '.PlaygroundEditorTheme__tableCellHeader',
+      );
+
+      // If no header cells with the sortable class, it's not sortable
+      if (headerCells.length === 0) {
+        return false;
+      }
+
+      // Strategy 2: Check if any header cell has pseudo-element content (sort indicators)
+      // This covers the case where no sort is active but headers are still sortable
+      for (const headerCell of headerCells) {
+        const pseudoStyle = window.getComputedStyle(
+          headerCell as Element,
+          '::after',
+        );
+        const content = pseudoStyle.getPropertyValue('content');
+
+        // CSS content values 'none' or '""' indicate no pseudo-element content
+        if (content !== 'none' && content !== '""' && content !== '') {
+          return true; // Found at least one sortable header
+        }
+      }
+
+      return false; // No sortable headers found
+    };
+
     // Function to setup intersection observer for a table
     const setupTableObserver = (table: HTMLTableElement) => {
+      // Only create sticky headers for tables with sortable headers (TableSortFilterPlugin)
+      if (!tableHasSortableHeaders(table)) {
+        return null; // Skip tables without sort functionality
+      }
+
       const tableId = `table-${Date.now()}-${Math.random()
         .toString(36)
         .substr(2, 9)}`;
