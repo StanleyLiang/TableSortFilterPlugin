@@ -37,15 +37,19 @@ export default function TableHeaderStickyPlugin(): JSX.Element | null {
   const updateStickyHeader = useCallback(
     (stickyHeader: StickyTableHeader) => {
       const editorElement = editor.getRootElement();
-      if (!editorElement) {return;}
-
+      if (!editorElement) {
+        return;
+      }
+      console.log({editorElement});
       const {originalTable, stickyContainer, stickyTable} = stickyHeader;
 
       try {
         const tableRect = originalTable.getBoundingClientRect();
         const headerRow = originalTable.querySelector('tr');
 
-        if (!headerRow) {return;}
+        if (!headerRow) {
+          return;
+        }
 
         const headerRect = headerRow.getBoundingClientRect();
 
@@ -70,12 +74,28 @@ export default function TableHeaderStickyPlugin(): JSX.Element | null {
             ? toolbar.getBoundingClientRect().height
             : 0;
 
+          // Get editor-scroller bounds to constrain sticky header width
+          const editorScroller = document.querySelector('.editor-scroller');
+          const scrollerRect = editorScroller 
+            ? editorScroller.getBoundingClientRect()
+            : editorElement.getBoundingClientRect();
+
+          // Calculate constrained width and position
+          const maxWidth = scrollerRect.width;
+          const leftPosition = Math.max(tableRect.left, scrollerRect.left);
+          const availableWidth = Math.min(
+            tableRect.width,
+            scrollerRect.right - leftPosition,
+          );
+
           // Show sticky header
           stickyContainer.style.display = 'block';
           stickyContainer.style.position = 'fixed';
           stickyContainer.style.top = `${toolbarHeight}px`; // Position below toolbar
-          stickyContainer.style.left = `${Math.max(tableRect.left, 0)}px`;
-          stickyContainer.style.width = `${tableRect.width}px`;
+          stickyContainer.style.left = `${leftPosition}px`;
+          stickyContainer.style.width = `${availableWidth}px`;
+          stickyContainer.style.maxWidth = `${maxWidth}px`;
+          stickyContainer.style.overflow = 'hidden';
           stickyContainer.style.zIndex = '9999';
 
           // Sync column widths and content
@@ -113,14 +133,14 @@ export default function TableHeaderStickyPlugin(): JSX.Element | null {
     [editor],
   );
 
-  // Handle scroll events with throttling for performance  
+  // Handle scroll events with throttling for performance
   const handleScroll = useCallback(
     throttle(() => {
       stickyHeadersRef.current.forEach((stickyHeader) => {
         updateStickyHeader(stickyHeader);
       });
     }, 16), // ~60fps
-    [updateStickyHeader]
+    [updateStickyHeader],
   );
 
   // Handle resize events with throttling
@@ -130,7 +150,7 @@ export default function TableHeaderStickyPlugin(): JSX.Element | null {
         updateStickyHeader(stickyHeader);
       });
     }, 100),
-    [updateStickyHeader]
+    [updateStickyHeader],
   );
 
   // Sync sticky header sort states with original table
@@ -169,7 +189,9 @@ export default function TableHeaderStickyPlugin(): JSX.Element | null {
     }
 
     const editorElement = editor.getRootElement();
-    if (!editorElement) {return;}
+    if (!editorElement) {
+      return;
+    }
 
     // Function to find all tables in the editor
     const findAllTables = (): HTMLTableElement[] => {
