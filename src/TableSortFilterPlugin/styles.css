@@ -8,6 +8,25 @@
   .PlaygroundEditorTheme__tableCellHeader::after {
     content: '↕️';
     position: absolute;
+    right: 26px; /* Move sort button left to make room for filter button */
+    top: 50%;
+    transform: translateY(-50%);
+    cursor: pointer;
+    opacity: 0.7;
+    font-size: 12px;
+    background: rgba(255, 255, 255, 0.8);
+    border: 1px solid #ccc;
+    border-radius: 3px;
+    padding: 2px 4px;
+    line-height: 1;
+    transition: opacity 0.2s;
+    user-select: none;
+    z-index: 1;
+  }
+
+  .PlaygroundEditorTheme__tableCellHeader::before {
+    content: '🔽';
+    position: absolute;
     right: 4px;
     top: 50%;
     transform: translateY(-50%);
@@ -28,6 +47,10 @@
     opacity: 1;
   }
 
+  .PlaygroundEditorTheme__tableCellHeader:hover::before {
+    opacity: 1;
+  }
+
   .PlaygroundEditorTheme__tableCellHeader.sort-asc::after {
     content: '↑';
     opacity: 1;
@@ -39,4 +62,87 @@
     opacity: 1;
     font-weight: bold;
   }
+
+  .PlaygroundEditorTheme__tableCellHeader.filter-active::before {
+    content: '🔽';
+    opacity: 1;
+    font-weight: bold;
+    color: #007acc;
+    background: rgba(0, 122, 204, 0.1);
+    border-color: #007acc;
+  }
+}
+
+/* Filter dropdown styles */
+.table-filter-dropdown {
+  position: absolute;
+  top: 100%;
+  right: 4px;
+  background: white;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  z-index: 1000;
+  min-width: 200px;
+  padding: 8px;
+}
+
+.table-filter-dropdown input {
+  width: 100%;
+  padding: 6px;
+  border: 1px solid #ddd;
+  border-radius: 3px;
+  font-size: 12px;
+  margin-bottom: 8px;
+}
+
+.table-filter-dropdown .filter-options {
+  max-height: 150px;
+  overflow-y: auto;
+  margin-bottom: 8px;
+}
+
+.table-filter-dropdown .filter-option {
+  padding: 4px 6px;
+  cursor: pointer;
+  font-size: 12px;
+  border-radius: 2px;
+}
+
+.table-filter-dropdown .filter-option:hover {
+  background-color: #f5f5f5;
+}
+
+.table-filter-dropdown .filter-option.selected {
+  background-color: #007acc;
+  color: white;
+}
+
+.table-filter-dropdown .filter-actions {
+  display: flex;
+  gap: 6px;
+  justify-content: flex-end;
+}
+
+.table-filter-dropdown button {
+  padding: 4px 8px;
+  border: 1px solid #ccc;
+  border-radius: 3px;
+  background: white;
+  cursor: pointer;
+  font-size: 11px;
+}
+
+.table-filter-dropdown button:hover {
+  background-color: #f5f5f5;
+}
+
+.table-filter-dropdown button.primary {
+  background-color: #007acc;
+  color: white;
+  border-color: #007acc;
+}
+
+.table-filter-dropdown button.primary:hover {
+  background-color: #005c99;
 }

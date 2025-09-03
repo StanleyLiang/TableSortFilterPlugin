@@ -7,24 +7,29 @@
  */
 
 import { useLexicalComposerContext } from "@lexical/react/LexicalComposerContext";
-import { $getRoot, type LexicalNode } from "lexical";
+import { $getRoot, $getNearestNodeFromDOMNode, type LexicalNode } from "lexical";
+import { TableNode } from "@lexical/table";
 import { useEffect, useState } from "react";
 import "./styles.css";
-import type { TableSortState } from "./types";
+import type { TableSortState, TableFilterState } from "./types";
 import {
   $captureOriginalTableChildren,
   $getTableCellData,
   $restoreOriginalTableChildren,
   $updateTableDataWithDirectMovement,
-  findTableNodeByElement,
   isPseudoElementClick,
   sortTableCellData,
+  getColumnUniqueValues,
+  applyTableFilter,
+  clearTableFilter,
 } from "./utils";
+import FilterDropdown from "./FilterDropdown";
 
 // CSS class names
 const TABLE_CELL_HEADER_CLASS = ".PlaygroundEditorTheme__tableCellHeader";
 const SORT_ASC_CLASS = "sort-asc";
 const SORT_DESC_CLASS = "sort-desc";
+const FILTER_ACTIVE_CLASS = "filter-active";
 
 export default function TableSortFilterPlugin(): JSX.Element | null {
   const [editor] = useLexicalComposerContext();
@@ -32,9 +37,121 @@ export default function TableSortFilterPlugin(): JSX.Element | null {
   const [sortStates, setSortStates] = useState<Map<string, TableSortState>>(
     new Map()
   );
+  const [filterStates, setFilterStates] = useState<
+    Map<string, TableFilterState>
+  >(new Map());
   const [originalTableChildren, setOriginalTableChildren] = useState<
     Map<string, Map<string, LexicalNode[]>>
   >(new Map());
+  const [activeFilterDropdown, setActiveFilterDropdown] = useState<{
+    tableKey: string;
+    columnIndex: number;
+    headerElement: HTMLElement;
+    position: {top: number; right: number};
+    uniqueValues: string[];
+  } | null>(null);
+
+  // Handle filter button click (completely independent of sort)
+  const handleFilterClick = (
+    headerElement: HTMLElement,
+    tableElement: HTMLTableElement,
+    columnIndex: number,
+  ) => {
+    // Find the table node and get data
+    editor.read(() => {
+      // Use Lexical's built-in API to find the table node from DOM element
+      const targetTableNode = $getNearestNodeFromDOMNode(tableElement);
+
+      // Ensure it's actually a TableNode
+      if (targetTableNode instanceof TableNode) {
+        const tableKey = targetTableNode.getKey();
+        const originalData = $getTableCellData(targetTableNode);
+        const uniqueValues = getColumnUniqueValues(originalData, columnIndex);
+
+        // Get current filter for this column
+        const currentTableFilters = filterStates.get(tableKey) || {};
+        const currentFilter = currentTableFilters[columnIndex] || '';
+
+        // Calculate dropdown position
+        const headerRect = headerElement.getBoundingClientRect();
+        const position = {
+          top: headerRect.bottom + window.scrollY,
+          right: window.innerWidth - headerRect.right,
+        };
+
+        // Show filter dropdown
+        setActiveFilterDropdown({
+          tableKey,
+          columnIndex,
+          headerElement,
+          position,
+          uniqueValues,
+        });
+      } else {
+        console.warn(
+          'TableSortFilterPlugin: Could not find TableNode from DOM element'
+        );
+      }
+    });
+  };
+
+  // Handle filter change (completely independent of sort)
+  const handleFilterChange = (filterValue: string) => {
+    if (!activeFilterDropdown) return;
+
+    const {tableKey, columnIndex, headerElement} = activeFilterDropdown;
+
+    // Find table element
+    const tableElement = headerElement.closest('table') as HTMLTableElement;
+    if (!tableElement) {
+      console.warn('TableSortFilterPlugin: Could not find table element');
+      return;
+    }
+
+    editor.read(() => {
+      // Use Lexical's built-in API to find the table node from DOM element
+      const targetTableNode = $getNearestNodeFromDOMNode(tableElement);
+
+      // Ensure it's actually a TableNode
+      if (targetTableNode instanceof TableNode) {
+        // Update filter state
+        const currentTableFilters = filterStates.get(tableKey) || {};
+        const newFilters = {...currentTableFilters};
+
+        if (filterValue.trim()) {
+          newFilters[columnIndex] = filterValue.trim();
+        } else {
+          delete newFilters[columnIndex];
+        }
+
+        setFilterStates((prev) => new Map(prev).set(tableKey, newFilters));
+
+        // Apply filter using CSS (independent of any sort state)
+        const originalData = $getTableCellData(targetTableNode);
+        if (filterValue.trim()) {
+          applyTableFilter(tableElement, originalData, columnIndex, filterValue);
+        } else {
+          clearTableFilter(tableElement);
+        }
+
+        // Update filter visual state
+        const tableHeaders = Array.from(
+          tableElement.querySelectorAll(TABLE_CELL_HEADER_CLASS.slice(1)) || []
+        );
+
+        tableHeaders.forEach((header, index) => {
+          header.classList.remove(FILTER_ACTIVE_CLASS);
+          if (newFilters[index]) {
+            header.classList.add(FILTER_ACTIVE_CLASS);
+          }
+        });
+      } else {
+        console.warn(
+          'TableSortFilterPlugin: Could not find TableNode from DOM element'
+        );
+      }
+    });
+  };
 
   // Handle click events on table headers using event delegation on editor container
   useEffect(() => {
@@ -47,7 +164,8 @@ export default function TableSortFilterPlugin(): JSX.Element | null {
       }
 
       // Check if click is in pseudo-element area
-      if (!isPseudoElementClick(event, headerCell)) {
+      const clickType = isPseudoElementClick(event, headerCell);
+      if (!clickType) {
         return;
       }
 
@@ -76,19 +194,19 @@ export default function TableSortFilterPlugin(): JSX.Element | null {
         return;
       }
 
-      // Find and execute sort on the specific table
+      if (clickType === 'filter') {
+        // Handle filter button click
+        handleFilterClick(headerCell as HTMLElement, tableElement, columnIndex);
+        return;
+      }
+
+      // Handle sort button click (existing sort logic)
       editor.update(() => {
-        const root = $getRoot();
-        const editorElement = editor.getRootElement();
-        const allTables = editorElement?.querySelectorAll("table") || [];
+        // Use Lexical's built-in API to find the table node from DOM element
+        const targetTableNode = $getNearestNodeFromDOMNode(tableElement);
 
-        const targetTableNode = findTableNodeByElement(
-          root,
-          tableElement,
-          allTables as NodeListOf<Element>
-        );
-
-        if (targetTableNode) {
+        // Ensure it's actually a TableNode
+        if (targetTableNode instanceof TableNode) {
           const tableKey = targetTableNode.getKey();
           const currentSortState = sortStates.get(tableKey);
 
@@ -154,6 +272,10 @@ export default function TableSortFilterPlugin(): JSX.Element | null {
               return newMap;
             });
           }
+        } else {
+          console.warn(
+            'TableSortFilterPlugin: Could not find TableNode from DOM element'
+          );
         }
       });
     };
@@ -168,7 +290,23 @@ export default function TableSortFilterPlugin(): JSX.Element | null {
         editorElement.removeEventListener("click", handleClick, true);
       };
     }
-  }, [editor, sortStates, originalTableChildren]);
+  }, [editor, sortStates, filterStates, originalTableChildren]);
 
-  return null;
+  return (
+    <>
+      {activeFilterDropdown && (
+        <FilterDropdown
+          uniqueValues={activeFilterDropdown.uniqueValues}
+          currentFilter={
+            filterStates.get(activeFilterDropdown.tableKey)?.[
+              activeFilterDropdown.columnIndex
+            ] || ''
+          }
+          onFilterChange={handleFilterChange}
+          onClose={() => setActiveFilterDropdown(null)}
+          position={activeFilterDropdown.position}
+        />
+      )}
+    </>
+  );
 }

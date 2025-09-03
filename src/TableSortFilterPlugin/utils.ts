@@ -23,9 +23,13 @@ import {
 import naturalCompare from "natural-compare";
 
 // Constants for pseudo-element button dimensions
-export const BUTTON_RIGHT_OFFSET = 4;
-export const BUTTON_WIDTH = 20;
-export const BUTTON_HEIGHT = 20;
+export const FILTER_BUTTON_RIGHT_OFFSET = 4;
+export const FILTER_BUTTON_WIDTH = 20;
+export const FILTER_BUTTON_HEIGHT = 20;
+
+export const SORT_BUTTON_RIGHT_OFFSET = 26;
+export const SORT_BUTTON_WIDTH = 20;
+export const SORT_BUTTON_HEIGHT = 20;
 
 // Type for storing cell content with formatting
 export interface CellData {
@@ -261,7 +265,7 @@ export function hasPseudoElement(headerCell: Element): boolean {
 export function isPseudoElementClick(
   event: MouseEvent,
   headerCell: Element
-): boolean {
+): 'sort' | 'filter' | false {
   // First check if there really is a pseudo-element
   if (!hasPseudoElement(headerCell)) {
     return false;
@@ -272,46 +276,93 @@ export function isPseudoElementClick(
   const offsetY = event.offsetY;
   const rect = headerCell.getBoundingClientRect();
 
-  // Calculate based on actual button position in CSS
-  const buttonLeft = rect.width - BUTTON_RIGHT_OFFSET - BUTTON_WIDTH;
-  const buttonTop = (rect.height - BUTTON_HEIGHT) / 2;
+  // Check filter button (::before - right side)
+  const filterButtonLeft = rect.width - FILTER_BUTTON_RIGHT_OFFSET - FILTER_BUTTON_WIDTH;
+  const filterButtonTop = (rect.height - FILTER_BUTTON_HEIGHT) / 2;
 
-  return (
-    offsetX >= buttonLeft &&
-    offsetX <= rect.width - BUTTON_RIGHT_OFFSET &&
-    offsetY >= buttonTop &&
-    offsetY <= buttonTop + BUTTON_HEIGHT
-  );
-}
-
-// Helper function to find table node by DOM element
-export function findTableNodeByElement(
-  root: LexicalNode,
-  targetElement: HTMLTableElement,
-  allTables: NodeListOf<Element>
-): TableNode | null {
-  let targetTableNode: TableNode | null = null;
-  let tableIndex = -1;
-
-  function traverse(node: LexicalNode): boolean {
-    if (node.getType() === "table") {
-      tableIndex++;
-      if (allTables[tableIndex] === targetElement) {
-        targetTableNode = node as TableNode;
-        return true; // Found - stop searching
-      }
-    }
-
-    const children = node.getChildren();
-    for (const child of children) {
-      if (traverse(child)) {
-        return true; // Early exit when found
-      }
-    }
-
-    return false; // Not found in this branch
+  if (
+    offsetX >= filterButtonLeft &&
+    offsetX <= rect.width - FILTER_BUTTON_RIGHT_OFFSET &&
+    offsetY >= filterButtonTop &&
+    offsetY <= filterButtonTop + FILTER_BUTTON_HEIGHT
+  ) {
+    return 'filter';
   }
 
-  traverse(root);
-  return targetTableNode;
+  // Check sort button (::after - left side of filter button)
+  const sortButtonLeft = rect.width - SORT_BUTTON_RIGHT_OFFSET - SORT_BUTTON_WIDTH;
+  const sortButtonTop = (rect.height - SORT_BUTTON_HEIGHT) / 2;
+
+  if (
+    offsetX >= sortButtonLeft &&
+    offsetX <= rect.width - SORT_BUTTON_RIGHT_OFFSET &&
+    offsetY >= sortButtonTop &&
+    offsetY <= sortButtonTop + SORT_BUTTON_HEIGHT
+  ) {
+    return 'sort';
+  }
+
+  return false;
+}
+
+
+// Extract unique values from a column for filter options
+export function getColumnUniqueValues(data: CellData[][], columnIndex: number): string[] {
+  const uniqueValues = new Set<string>();
+  
+  // Skip header row (index 0) and collect unique values
+  for (let i = 1; i < data.length; i++) {
+    const row = data[i];
+    if (row[columnIndex]) {
+      const value = row[columnIndex].textContent.trim();
+      if (value) {
+        uniqueValues.add(value);
+      }
+    }
+  }
+  
+  // Convert to array and sort
+  return Array.from(uniqueValues).sort((a, b) => naturalCompare(a, b));
+}
+
+// Apply filters using CSS display:none to hide filtered rows
+export function applyTableFilter(
+  tableElement: HTMLTableElement,
+  data: CellData[][],
+  columnIndex: number,
+  filterValue: string
+): void {
+  const rows = tableElement.querySelectorAll('tr');
+  
+  // Skip header row (index 0)
+  for (let rowIndex = 1; rowIndex < rows.length; rowIndex++) {
+    const row = rows[rowIndex];
+    const dataRowIndex = rowIndex - 1; // Adjust for header row
+    
+    if (dataRowIndex < data.length - 1) { // -1 because data includes header
+      const rowData = data[dataRowIndex + 1]; // +1 because data includes header
+      const cellValue = rowData[columnIndex]?.textContent || '';
+      
+      // Case-insensitive contains matching
+      const shouldShow = !filterValue.trim() || 
+        cellValue.toLowerCase().includes(filterValue.toLowerCase());
+      
+      // Show/hide row with CSS
+      if (shouldShow) {
+        row.style.display = '';
+      } else {
+        row.style.display = 'none';
+      }
+    }
+  }
+}
+
+// Clear all table filters (show all rows)
+export function clearTableFilter(tableElement: HTMLTableElement): void {
+  const rows = tableElement.querySelectorAll('tr');
+  
+  // Show all rows except header
+  for (let i = 1; i < rows.length; i++) {
+    rows[i].style.display = '';
+  }
 }

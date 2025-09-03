@@ -13,3 +13,7 @@ export type TableSortState = {
 } | null;
 
 export type SortDirection = "asc" | "desc";
+
+export type TableFilterState = {
+  [columnIndex: number]: string; // columnIndex -> filter text
+};
