@@ -5,14 +5,15 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, {useState, useEffect, useRef} from 'react';
+import {createPortal} from 'react-dom';
 
 interface FilterDropdownProps {
   uniqueValues: string[];
   currentFilter: string;
   onFilterChange: (value: string) => void;
   onClose: () => void;
-  position: { top: number; right: number };
+  headerElement: HTMLElement;
 }
 
 export default function FilterDropdown({
@@ -20,12 +21,35 @@ export default function FilterDropdown({
   currentFilter,
   onFilterChange,
   onClose,
-  position,
+  headerElement,
 }: FilterDropdownProps): JSX.Element {
   const [searchText, setSearchText] = useState(currentFilter);
   const [selectedValue, setSelectedValue] = useState(currentFilter);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  // Calculate position based on header element
+  const calculatePosition = (element: HTMLElement) => {
+    const rect = element.getBoundingClientRect();
+    const dropdownWidth = 200; // min-width of dropdown
+    
+    // Calculate left position, ensuring it doesn't go off-screen
+    let left = rect.right - dropdownWidth;
+    if (left < 10) { // 10px margin from left edge
+      left = rect.left;
+    }
+    if (left + dropdownWidth > window.innerWidth - 10) { // 10px margin from right edge
+      left = window.innerWidth - dropdownWidth - 10;
+    }
+    
+    return {
+      top: rect.bottom + window.scrollY,
+      left: left,
+    };
+  };
+
+  // Calculate initial position immediately
+  const position = headerElement ? calculatePosition(headerElement) : {top: 0, left: 0};
 
   // Focus input when dropdown opens
   useEffect(() => {
@@ -37,7 +61,10 @@ export default function FilterDropdown({
   // Close dropdown when clicking outside
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+      if (
+        dropdownRef.current &&
+        !dropdownRef.current.contains(event.target as Node)
+      ) {
         onClose();
       }
     };
@@ -64,7 +91,7 @@ export default function FilterDropdown({
 
   // Filter options based on search text
   const filteredOptions = uniqueValues.filter((value) =>
-    value.toLowerCase().includes(searchText.toLowerCase())
+    value.toLowerCase().includes(searchText.toLowerCase()),
   );
 
   const handleApply = () => {
@@ -89,14 +116,15 @@ export default function FilterDropdown({
     setSearchText(value);
     setSelectedValue(value);
   };
-
-  return (
-    <div
-      ref={dropdownRef}
+  return createPortal(
+    <div 
+      ref={dropdownRef} 
       className="table-filter-dropdown"
       style={{
+        position: 'absolute',
         top: position.top,
-        right: position.right,
+        left: position.left,
+        zIndex: 9999,
       }}
     >
       <input
@@ -111,25 +139,29 @@ export default function FilterDropdown({
           }
         }}
       />
-      
+
       {filteredOptions.length > 0 && (
         <div className="filter-options">
           {filteredOptions.map((value, index) => (
             <div
               key={index}
-              className={`filter-option ${selectedValue === value ? 'selected' : ''}`}
-              onClick={() => handleOptionClick(value)}
-            >
+              className={`filter-option ${
+                selectedValue === value ? 'selected' : ''
+              }`}
+              onClick={() => handleOptionClick(value)}>
               {value}
             </div>
           ))}
         </div>
       )}
-      
+
       <div className="filter-actions">
         <button onClick={handleClear}>Clear</button>
-        <button onClick={handleApply} className="primary">Apply</button>
+        <button onClick={handleApply} className="primary">
+          Apply
+        </button>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

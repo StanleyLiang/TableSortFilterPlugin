@@ -3,6 +3,7 @@
 .PlaygroundEditorTheme__table > tr:first-of-type {
   .PlaygroundEditorTheme__tableCellHeader {
     position: relative;
+    overflow: visible; /* Ensure dropdown is not clipped */
   }
 
   .PlaygroundEditorTheme__tableCellHeader::after {
@@ -75,14 +76,10 @@
 
 /* Filter dropdown styles */
 .table-filter-dropdown {
-  position: absolute;
-  top: 100%;
-  right: 4px;
   background: white;
   border: 1px solid #ccc;
   border-radius: 4px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
-  z-index: 1000;
   min-width: 200px;
   padding: 8px;
 }

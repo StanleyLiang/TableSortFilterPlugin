@@ -52,11 +52,8 @@ export function $getTableCellData(tableNode: TableNode): CellData[][] {
         if ($isTableCellNode(cell)) {
           const children = cell.getChildren();
           
-          // Check if all children are ParagraphNode
-          const hasNonParagraphNode = children.some(child => !$isParagraphNode(child));
-          
-          // If cell contains non-ParagraphNode, set cellText to empty string
-          const cellText = hasNonParagraphNode ? '' : cell.getTextContent();
+          // Always use getTextContent() to get the text content
+          const cellText = cell.getTextContent();
           const cellKey = cell.getKey(); // Use Lexical's unique key
 
           rowData.push({
