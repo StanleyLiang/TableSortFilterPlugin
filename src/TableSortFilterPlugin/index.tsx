@@ -20,6 +20,7 @@ import {
   isPseudoElementClick,
   sortTableCellData,
   getColumnUniqueValues,
+  applyTableView,
   applyTableFilter,
   clearTableFilter,
 } from './utils';
@@ -99,52 +100,50 @@ export default function TableSortFilterPlugin(): JSX.Element | null {
       return;
     }
 
-    editor.read(() => {
+    // Update filter state first
+    const currentTableFilters = filterStates.get(tableKey) || {};
+    const newFilters = {...currentTableFilters};
+
+    if (filterValue.trim()) {
+      newFilters[columnIndex] = filterValue.trim();
+    } else {
+      delete newFilters[columnIndex];
+    }
+
+    setFilterStates((prev) => new Map(prev).set(tableKey, newFilters));
+
+    editor.update(() => {
       // Use Lexical's built-in API to find the table node from DOM element
       const targetTableNode = $getNearestNodeFromDOMNode(tableElement);
 
       // Ensure it's actually a TableNode
       if (targetTableNode instanceof TableNode) {
-        // Update filter state
-        const currentTableFilters = filterStates.get(tableKey) || {};
-        const newFilters = {...currentTableFilters};
-
-        if (filterValue.trim()) {
-          newFilters[columnIndex] = filterValue.trim();
-        } else {
-          delete newFilters[columnIndex];
-        }
-
-        setFilterStates((prev) => new Map(prev).set(tableKey, newFilters));
-
-        // Apply filter using CSS (independent of any sort state)
-        const originalData = $getTableCellData(targetTableNode);
-        if (filterValue.trim()) {
-          applyTableFilter(
-            tableElement,
-            originalData,
-            columnIndex,
-            filterValue,
-          );
-        } else {
-          clearTableFilter(tableElement);
-        }
-
-        // Update filter visual state
-        const tableHeaders = Array.from(
-          tableElement.querySelectorAll(TABLE_CELL_HEADER_CLASS.slice(1)) || [],
+        // Apply unified table view: Original → Sort → Filter  
+        const currentSortState = sortStates.get(tableKey);
+        const originalChildren = originalTableChildren.get(tableKey);
+        applyTableView(
+          targetTableNode,
+          tableElement,
+          originalChildren,
+          currentSortState,
+          newFilters
         );
-
-        tableHeaders.forEach((header, index) => {
-          header.classList.remove(FILTER_ACTIVE_CLASS);
-          if (newFilters[index]) {
-            header.classList.add(FILTER_ACTIVE_CLASS);
-          }
-        });
       } else {
         console.warn(
           'TableSortFilterPlugin: Could not find TableNode from DOM element',
         );
+      }
+    });
+
+    // Update filter visual state (can be done outside editor.update)
+    const tableHeaders = Array.from(
+      tableElement.querySelectorAll(TABLE_CELL_HEADER_CLASS.slice(1)) || [],
+    );
+
+    tableHeaders.forEach((header, index) => {
+      header.classList.remove(FILTER_ACTIVE_CLASS);
+      if (newFilters[index]) {
+        header.classList.add(FILTER_ACTIVE_CLASS);
       }
     });
   };
@@ -226,39 +225,12 @@ export default function TableSortFilterPlugin(): JSX.Element | null {
           ) {
             // First click on this column: sort ascending
             newSortState = {columnIndex, direction: 'asc'};
-            const data = $getTableCellData(targetTableNode);
-            const dataToApply = sortTableCellData(data, columnIndex, 'asc');
-            $updateTableDataWithDirectMovement(targetTableNode, dataToApply);
           } else if (currentSortState.direction === 'asc') {
             // Second click: sort descending
             newSortState = {columnIndex, direction: 'desc'};
-            const data = $getTableCellData(targetTableNode);
-            const dataToApply = sortTableCellData(data, columnIndex, 'desc');
-            $updateTableDataWithDirectMovement(targetTableNode, dataToApply);
           } else {
-            // Third click: cancel sort (restore original data)
+            // Third click: cancel sort
             newSortState = null;
-            const originalChildren = originalTableChildren.get(tableKey);
-            if (originalChildren) {
-              $restoreOriginalTableChildren(targetTableNode, originalChildren);
-            }
-          }
-
-          // Clear sort classes only from this table's headers
-          const thisTableHeaders = tableElement.querySelectorAll(
-            TABLE_CELL_HEADER_CLASS,
-          );
-          thisTableHeaders.forEach((cell) => {
-            cell.classList.remove(SORT_ASC_CLASS, SORT_DESC_CLASS);
-          });
-
-          // Add sort class to current cell (if sorting)
-          if (newSortState) {
-            headerCell.classList.add(
-              newSortState.direction === 'asc'
-                ? SORT_ASC_CLASS
-                : SORT_DESC_CLASS,
-            );
           }
 
           // Update sort state for this specific table
@@ -270,6 +242,33 @@ export default function TableSortFilterPlugin(): JSX.Element | null {
               newMap.delete(tableKey);
               return newMap;
             });
+          }
+
+          // Apply unified table view: Original → Sort → Filter
+          const currentTableFilters = filterStates.get(tableKey) || {};
+          const originalChildren = originalTableChildren.get(tableKey);
+          applyTableView(
+            targetTableNode,
+            tableElement,
+            originalChildren,
+            newSortState,
+            currentTableFilters
+          );
+
+          // Update sort visual state
+          const thisTableHeaders = tableElement.querySelectorAll(
+            TABLE_CELL_HEADER_CLASS,
+          );
+          thisTableHeaders.forEach((cell) => {
+            cell.classList.remove(SORT_ASC_CLASS, SORT_DESC_CLASS);
+          });
+
+          if (newSortState) {
+            headerCell.classList.add(
+              newSortState.direction === 'asc'
+                ? SORT_ASC_CLASS
+                : SORT_DESC_CLASS,
+            );
           }
         } else {
           console.warn(

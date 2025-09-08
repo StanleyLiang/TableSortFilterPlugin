@@ -363,3 +363,66 @@ export function clearTableFilter(tableElement: HTMLTableElement): void {
     rows[i].style.display = '';
   }
 }
+
+// Unified table view application: Original → Sort → Filter
+export function applyTableView(
+  tableNode: TableNode,
+  tableElement: HTMLTableElement,
+  originalChildren: Map<string, LexicalNode[]> | undefined,
+  sortState: { columnIndex: number; direction: SortDirection } | null,
+  filterState: Record<number, string>
+): void {
+  // Step 1: Restore to original state first
+  if (originalChildren) {
+    $restoreOriginalTableChildren(tableNode, originalChildren);
+  }
+
+  // Step 2: Apply sorting if needed (modifies DOM node order)
+  if (sortState) {
+    const data = $getTableCellData(tableNode);
+    const sortedData = sortTableCellData(data, sortState.columnIndex, sortState.direction);
+    $updateTableDataWithDirectMovement(tableNode, sortedData);
+  }
+
+  // Step 3: Apply filtering if needed (uses CSS display:none on current DOM)
+  // First clear all filters
+  clearTableFilter(tableElement);
+  
+  // Then apply each active filter based on current DOM content
+  Object.entries(filterState).forEach(([columnIndexStr, filterValue]) => {
+    const columnIndex = parseInt(columnIndexStr, 10);
+    if (filterValue.trim()) {
+      applyTableFilterByDOM(tableElement, columnIndex, filterValue);
+    }
+  });
+}
+
+// Filter based on current DOM content (works after sorting)
+export function applyTableFilterByDOM(
+  tableElement: HTMLTableElement,
+  columnIndex: number,
+  filterValue: string
+): void {
+  const rows = tableElement.querySelectorAll('tr');
+  
+  // Skip header row (index 0), read directly from DOM cells
+  for (let rowIndex = 1; rowIndex < rows.length; rowIndex++) {
+    const row = rows[rowIndex];
+    const cells = row.querySelectorAll('td, th');
+    
+    if (cells[columnIndex]) {
+      const cellText = cells[columnIndex].textContent || '';
+      
+      // Case-insensitive contains matching
+      const shouldShow = !filterValue.trim() || 
+        cellText.toLowerCase().includes(filterValue.toLowerCase());
+      
+      // Show/hide row with CSS
+      if (shouldShow) {
+        row.style.display = '';
+      } else {
+        row.style.display = 'none';
+      }
+    }
+  }
+}
