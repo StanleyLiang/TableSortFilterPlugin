@@ -7,7 +7,7 @@
  */
 
 import {useLexicalComposerContext} from '@lexical/react/LexicalComposerContext';
-import {$getRoot, $getNearestNodeFromDOMNode, type LexicalNode} from 'lexical';
+import {$getNearestNodeFromDOMNode, type LexicalNode} from 'lexical';
 import {TableNode} from '@lexical/table';
 import {useEffect, useState} from 'react';
 import './styles.css';
@@ -15,14 +15,9 @@ import type {TableSortState, TableFilterState} from './types';
 import {
   $captureOriginalTableChildren,
   $getTableCellData,
-  $restoreOriginalTableChildren,
-  $updateTableDataWithDirectMovement,
   isPseudoElementClick,
-  sortTableCellData,
   getColumnUniqueValues,
   applyTableView,
-  applyTableFilter,
-  clearTableFilter,
 } from './utils';
 import FilterDropdown from './FilterDropdown';
 
@@ -68,10 +63,6 @@ export default function TableSortFilterPlugin(): JSX.Element | null {
         const originalData = $getTableCellData(targetTableNode);
         const uniqueValues = getColumnUniqueValues(originalData, columnIndex);
 
-        // Get current filter for this column
-        const currentTableFilters = filterStates.get(tableKey) || {};
-        const currentFilter = currentTableFilters[columnIndex] || '';
-
         // Show filter dropdown
         setActiveFilterDropdown({
           tableKey,
@@ -100,17 +91,12 @@ export default function TableSortFilterPlugin(): JSX.Element | null {
       return;
     }
 
-    // Update filter state first
-    const currentTableFilters = filterStates.get(tableKey) || {};
-    const newFilters = {...currentTableFilters};
+    // Update filter state first - single column filter
+    const newFilterState = filterValue.trim() 
+      ? { columnIndex, filterValue: filterValue.trim() }
+      : null;
 
-    if (filterValue.trim()) {
-      newFilters[columnIndex] = filterValue.trim();
-    } else {
-      delete newFilters[columnIndex];
-    }
-
-    setFilterStates((prev) => new Map(prev).set(tableKey, newFilters));
+    setFilterStates((prev) => new Map(prev).set(tableKey, newFilterState));
 
     editor.update(() => {
       // Use Lexical's built-in API to find the table node from DOM element
@@ -118,7 +104,7 @@ export default function TableSortFilterPlugin(): JSX.Element | null {
 
       // Ensure it's actually a TableNode
       if (targetTableNode instanceof TableNode) {
-        // Apply unified table view: Original → Sort → Filter  
+        // Apply unified table view: Original → Sort → Filter
         const currentSortState = sortStates.get(tableKey);
         const originalChildren = originalTableChildren.get(tableKey);
         applyTableView(
@@ -126,7 +112,7 @@ export default function TableSortFilterPlugin(): JSX.Element | null {
           tableElement,
           originalChildren,
           currentSortState,
-          newFilters
+          newFilterState,
         );
       } else {
         console.warn(
@@ -142,7 +128,7 @@ export default function TableSortFilterPlugin(): JSX.Element | null {
 
     tableHeaders.forEach((header, index) => {
       header.classList.remove(FILTER_ACTIVE_CLASS);
-      if (newFilters[index]) {
+      if (newFilterState && newFilterState.columnIndex === index) {
         header.classList.add(FILTER_ACTIVE_CLASS);
       }
     });
@@ -198,7 +184,7 @@ export default function TableSortFilterPlugin(): JSX.Element | null {
       // Handle sort button click (existing sort logic)
       // Close any active filter dropdown before sorting to prevent DOM reference issues
       setActiveFilterDropdown(null);
-      
+
       editor.update(() => {
         // Use Lexical's built-in API to find the table node from DOM element
         const targetTableNode = $getNearestNodeFromDOMNode(tableElement);
@@ -245,14 +231,14 @@ export default function TableSortFilterPlugin(): JSX.Element | null {
           }
 
           // Apply unified table view: Original → Sort → Filter
-          const currentTableFilters = filterStates.get(tableKey) || {};
+          const currentTableFilters = filterStates.get(tableKey);
           const originalChildren = originalTableChildren.get(tableKey);
           applyTableView(
             targetTableNode,
             tableElement,
             originalChildren,
             newSortState,
-            currentTableFilters
+            currentTableFilters,
           );
 
           // Update sort visual state
@@ -296,9 +282,12 @@ export default function TableSortFilterPlugin(): JSX.Element | null {
         <FilterDropdown
           uniqueValues={activeFilterDropdown.uniqueValues}
           currentFilter={
-            filterStates.get(activeFilterDropdown.tableKey)?.[
-              activeFilterDropdown.columnIndex
-            ] || ''
+            (() => {
+              const currentFilterState = filterStates.get(activeFilterDropdown.tableKey);
+              return currentFilterState?.columnIndex === activeFilterDropdown.columnIndex 
+                ? currentFilterState.filterValue 
+                : '';
+            })()
           }
           onFilterChange={handleFilterChange}
           onClose={() => setActiveFilterDropdown(null)}

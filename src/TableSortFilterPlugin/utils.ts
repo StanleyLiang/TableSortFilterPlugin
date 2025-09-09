@@ -6,21 +6,20 @@
  *
  */
 
-import type { SortDirection } from "./types";
+import type {SortDirection} from './types';
 
 import {
   $isTableCellNode,
   $isTableRowNode,
   TableCellNode,
   TableNode,
-} from "@lexical/table";
+} from '@lexical/table';
 import {
   $createParagraphNode,
   $createTextNode,
-  $isParagraphNode,
   type LexicalNode,
-} from "lexical";
-import naturalCompare from "natural-compare";
+} from 'lexical';
+import naturalCompare from 'natural-compare';
 
 // Constants for pseudo-element button dimensions
 export const FILTER_BUTTON_RIGHT_OFFSET = 4;
@@ -51,7 +50,7 @@ export function $getTableCellData(tableNode: TableNode): CellData[][] {
       cells.forEach((cell) => {
         if ($isTableCellNode(cell)) {
           const children = cell.getChildren();
-          
+
           // Always use getTextContent() to get the text content
           const cellText = cell.getTextContent();
           const cellKey = cell.getKey(); // Use Lexical's unique key
@@ -73,7 +72,7 @@ export function $getTableCellData(tableNode: TableNode): CellData[][] {
 
 // Function to capture original children data by position
 export function $captureOriginalTableChildren(
-  tableNode: TableNode
+  tableNode: TableNode,
 ): Map<string, LexicalNode[]> {
   const originalChildren = new Map<string, LexicalNode[]>();
   const rows = tableNode.getChildren();
@@ -97,7 +96,7 @@ export function $captureOriginalTableChildren(
 // Function to restore original children data by position
 export function $restoreOriginalTableChildren(
   tableNode: TableNode,
-  originalChildren: Map<string, LexicalNode[]>
+  originalChildren: Map<string, LexicalNode[]>,
 ): void {
   const rows = tableNode.getChildren();
 
@@ -123,7 +122,7 @@ export function $restoreOriginalTableChildren(
 // Safe node movement by collecting content first, then applying
 export function $updateTableDataWithDirectMovement(
   tableNode: TableNode,
-  data: CellData[][]
+  data: CellData[][],
 ): void {
   const rows = tableNode.getChildren();
 
@@ -167,7 +166,7 @@ export function $updateTableDataWithDirectMovement(
             if (sourceCell) {
               // Collect children from found source cell
               const children = sourceCell.getChildren().slice();
-              rowContentToMove.push({ targetCell, content: children });
+              rowContentToMove.push({targetCell, content: children});
             } else if (cellData.textContent.trim()) {
               // Text-only content - create new
               rowContentToMove.push({
@@ -176,11 +175,11 @@ export function $updateTableDataWithDirectMovement(
               });
             } else {
               // No change needed
-              rowContentToMove.push({ targetCell, content: [] });
+              rowContentToMove.push({targetCell, content: []});
             }
           } else {
             // No change needed
-            rowContentToMove.push({ targetCell, content: [] });
+            rowContentToMove.push({targetCell, content: []});
           }
         }
       });
@@ -191,7 +190,7 @@ export function $updateTableDataWithDirectMovement(
   // Step 2: Apply the collected content (safe from interference)
   contentToMove.forEach((rowContentToMove) => {
     rowContentToMove.forEach((cellContentToMove) => {
-      const { targetCell, content } = cellContentToMove;
+      const {targetCell, content} = cellContentToMove;
 
       if (Array.isArray(content) && content.length > 0) {
         // Move nodes
@@ -199,7 +198,7 @@ export function $updateTableDataWithDirectMovement(
         content.forEach((child) => {
           targetCell.append(child);
         });
-      } else if (typeof content === "string" && content.trim()) {
+      } else if (typeof content === 'string' && content.trim()) {
         // Create text content
         targetCell.clear();
         const paragraph = $createParagraphNode();
@@ -216,14 +215,14 @@ export function $updateTableDataWithDirectMovement(
 export function sortTableCellData(
   data: CellData[][],
   columnIndex: number,
-  direction: SortDirection
+  direction: SortDirection,
 ): CellData[][] {
   const headerRow = data[0];
   const dataRows = data.slice(1);
 
   const sortedRows = [...dataRows].sort((a, b) => {
-    const aVal = a[columnIndex]?.textContent || "";
-    const bVal = b[columnIndex]?.textContent || "";
+    const aVal = a[columnIndex]?.textContent || '';
+    const bVal = b[columnIndex]?.textContent || '';
 
     // Check if values are empty (after trimming)
     const aIsEmpty = aVal.trim().length === 0;
@@ -240,7 +239,7 @@ export function sortTableCellData(
 
     // Both have content - use natural-compare for intelligent sorting
     const comparison = naturalCompare(aVal, bVal);
-    return direction === "asc" ? comparison : -comparison;
+    return direction === 'asc' ? comparison : -comparison;
   });
 
   return [headerRow, ...sortedRows];
@@ -249,19 +248,19 @@ export function sortTableCellData(
 // Check if header cell has pseudo-element (::after)
 export function hasPseudoElement(headerCell: Element): boolean {
   // Use getComputedStyle to check ::after pseudo-element
-  const pseudoStyle = window.getComputedStyle(headerCell, "::after");
+  const pseudoStyle = window.getComputedStyle(headerCell, '::after');
 
   // Check if content property is not 'none' or empty string
-  const content = pseudoStyle.getPropertyValue("content");
+  const content = pseudoStyle.getPropertyValue('content');
 
   // CSS content values 'none' or '""' indicate no content
-  return content !== "none" && content !== '""' && content !== "";
+  return content !== 'none' && content !== '""' && content !== '';
 }
 
 // Precisely detect if click is in pseudo-element button area
 export function isPseudoElementClick(
   event: MouseEvent,
-  headerCell: Element
+  headerCell: Element,
 ): 'sort' | 'filter' | false {
   // First check if there really is a pseudo-element
   if (!hasPseudoElement(headerCell)) {
@@ -274,7 +273,8 @@ export function isPseudoElementClick(
   const rect = headerCell.getBoundingClientRect();
 
   // Check filter button (::before - right side)
-  const filterButtonLeft = rect.width - FILTER_BUTTON_RIGHT_OFFSET - FILTER_BUTTON_WIDTH;
+  const filterButtonLeft =
+    rect.width - FILTER_BUTTON_RIGHT_OFFSET - FILTER_BUTTON_WIDTH;
   const filterButtonTop = (rect.height - FILTER_BUTTON_HEIGHT) / 2;
 
   if (
@@ -287,7 +287,8 @@ export function isPseudoElementClick(
   }
 
   // Check sort button (::after - left side of filter button)
-  const sortButtonLeft = rect.width - SORT_BUTTON_RIGHT_OFFSET - SORT_BUTTON_WIDTH;
+  const sortButtonLeft =
+    rect.width - SORT_BUTTON_RIGHT_OFFSET - SORT_BUTTON_WIDTH;
   const sortButtonTop = (rect.height - SORT_BUTTON_HEIGHT) / 2;
 
   if (
@@ -302,11 +303,13 @@ export function isPseudoElementClick(
   return false;
 }
 
-
 // Extract unique values from a column for filter options
-export function getColumnUniqueValues(data: CellData[][], columnIndex: number): string[] {
+export function getColumnUniqueValues(
+  data: CellData[][],
+  columnIndex: number,
+): string[] {
   const uniqueValues = new Set<string>();
-  
+
   // Skip header row (index 0) and collect unique values
   for (let i = 1; i < data.length; i++) {
     const row = data[i];
@@ -317,47 +320,16 @@ export function getColumnUniqueValues(data: CellData[][], columnIndex: number): 
       }
     }
   }
-  
+
   // Convert to array and sort
   return Array.from(uniqueValues).sort((a, b) => naturalCompare(a, b));
 }
 
-// Apply filters using CSS display:none to hide filtered rows
-export function applyTableFilter(
-  tableElement: HTMLTableElement,
-  data: CellData[][],
-  columnIndex: number,
-  filterValue: string
-): void {
-  const rows = tableElement.querySelectorAll('tr');
-  
-  // Skip header row (index 0)
-  for (let rowIndex = 1; rowIndex < rows.length; rowIndex++) {
-    const row = rows[rowIndex];
-    const dataRowIndex = rowIndex - 1; // Adjust for header row
-    
-    if (dataRowIndex < data.length - 1) { // -1 because data includes header
-      const rowData = data[dataRowIndex + 1]; // +1 because data includes header
-      const cellValue = rowData[columnIndex]?.textContent || '';
-      
-      // Case-insensitive contains matching
-      const shouldShow = !filterValue.trim() || 
-        cellValue.toLowerCase().includes(filterValue.toLowerCase());
-      
-      // Show/hide row with CSS
-      if (shouldShow) {
-        row.style.display = '';
-      } else {
-        row.style.display = 'none';
-      }
-    }
-  }
-}
 
 // Clear all table filters (show all rows)
 export function clearTableFilter(tableElement: HTMLTableElement): void {
   const rows = tableElement.querySelectorAll('tr');
-  
+
   // Show all rows except header
   for (let i = 1; i < rows.length; i++) {
     rows[i].style.display = '';
@@ -369,8 +341,8 @@ export function applyTableView(
   tableNode: TableNode,
   tableElement: HTMLTableElement,
   originalChildren: Map<string, LexicalNode[]> | undefined,
-  sortState: { columnIndex: number; direction: SortDirection } | null,
-  filterState: Record<number, string>
+  sortState: {columnIndex: number; direction: SortDirection} | null,
+  filterState: { columnIndex: number; filterValue: string } | null,
 ): void {
   // Step 1: Restore to original state first
   if (originalChildren) {
@@ -380,28 +352,30 @@ export function applyTableView(
   // Step 2: Apply sorting if needed (modifies DOM node order)
   if (sortState) {
     const data = $getTableCellData(tableNode);
-    const sortedData = sortTableCellData(data, sortState.columnIndex, sortState.direction);
+    const sortedData = sortTableCellData(
+      data,
+      sortState.columnIndex,
+      sortState.direction,
+    );
     $updateTableDataWithDirectMovement(tableNode, sortedData);
   }
-
   // Step 3: Apply filtering if needed (uses CSS display:none on current DOM)
   // First clear all filters
-  clearTableFilter(tableElement);
-  
-  // Then apply each active filter based on current DOM content
-  Object.entries(filterState).forEach(([columnIndexStr, filterValue]) => {
-    const columnIndex = parseInt(columnIndexStr, 10);
-    if (filterValue.trim()) {
-      applyTableFilterByDOM(tableElement, columnIndex, filterValue);
+  setTimeout(() => {
+    clearTableFilter(tableElement);
+
+    // Apply single filter if active
+    if (filterState) {
+      applyTableFilterByDOM(tableElement, filterState.columnIndex, filterState.filterValue);
     }
-  });
+  }, 0); // Delay to ensure DOM is updated after sorting
 }
 
 // Filter based on current DOM content (works after sorting)
 export function applyTableFilterByDOM(
   tableElement: HTMLTableElement,
   columnIndex: number,
-  filterValue: string
+  filterValue: string,
 ): void {
   const rows = tableElement.querySelectorAll('tr');
   
@@ -409,14 +383,15 @@ export function applyTableFilterByDOM(
   for (let rowIndex = 1; rowIndex < rows.length; rowIndex++) {
     const row = rows[rowIndex];
     const cells = row.querySelectorAll('td, th');
-    
+
     if (cells[columnIndex]) {
       const cellText = cells[columnIndex].textContent || '';
-      
+
       // Case-insensitive contains matching
-      const shouldShow = !filterValue.trim() || 
+      const shouldShow =
+        !filterValue.trim() ||
         cellText.toLowerCase().includes(filterValue.toLowerCase());
-      
+
       // Show/hide row with CSS
       if (shouldShow) {
         row.style.display = '';

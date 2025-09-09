@@ -15,5 +15,6 @@ export type TableSortState = {
 export type SortDirection = "asc" | "desc";
 
 export type TableFilterState = {
-  [columnIndex: number]: string; // columnIndex -> filter text
-};
+  columnIndex: number;
+  filterValue: string;
+} | null;
