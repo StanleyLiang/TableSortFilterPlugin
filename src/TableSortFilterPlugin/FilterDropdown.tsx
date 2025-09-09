@@ -9,7 +9,6 @@ import React, {useState, useEffect, useRef} from 'react';
 import {createPortal} from 'react-dom';
 
 interface FilterDropdownProps {
-  uniqueValues: string[];
   currentFilter: string;
   onFilterChange: (value: string) => void;
   onClose: () => void;
@@ -17,14 +16,12 @@ interface FilterDropdownProps {
 }
 
 export default function FilterDropdown({
-  uniqueValues,
   currentFilter,
   onFilterChange,
   onClose,
   headerElement,
 }: FilterDropdownProps): JSX.Element {
   const [searchText, setSearchText] = useState(currentFilter);
-  const [selectedValue, setSelectedValue] = useState(currentFilter);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -89,11 +86,6 @@ export default function FilterDropdown({
     };
   }, [onClose]);
 
-  // Filter options based on search text
-  const filteredOptions = uniqueValues.filter((value) =>
-    value.toLowerCase().includes(searchText.toLowerCase()),
-  );
-
   const handleApply = () => {
     onFilterChange(searchText.trim());
     onClose();
@@ -101,20 +93,12 @@ export default function FilterDropdown({
 
   const handleClear = () => {
     setSearchText('');
-    setSelectedValue('');
     onFilterChange('');
     onClose();
   };
 
-  const handleOptionClick = (value: string) => {
-    setSearchText(value);
-    setSelectedValue(value);
-  };
-
   const handleSearchChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const value = event.target.value;
-    setSearchText(value);
-    setSelectedValue(value);
+    setSearchText(event.target.value);
   };
   return createPortal(
     <div 
@@ -130,7 +114,7 @@ export default function FilterDropdown({
       <input
         ref={inputRef}
         type="text"
-        placeholder="Search or type to filter..."
+        placeholder="Enter filter value..."
         value={searchText}
         onChange={handleSearchChange}
         onKeyDown={(e) => {
@@ -139,21 +123,6 @@ export default function FilterDropdown({
           }
         }}
       />
-
-      {filteredOptions.length > 0 && (
-        <div className="filter-options">
-          {filteredOptions.map((value, index) => (
-            <div
-              key={index}
-              className={`filter-option ${
-                selectedValue === value ? 'selected' : ''
-              }`}
-              onClick={() => handleOptionClick(value)}>
-              {value}
-            </div>
-          ))}
-        </div>
-      )}
 
       <div className="filter-actions">
         <button onClick={handleClear}>Clear</button>

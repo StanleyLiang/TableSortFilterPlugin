@@ -14,9 +14,7 @@ import './styles.css';
 import type {TableSortState, TableFilterState} from './types';
 import {
   $captureOriginalTableChildren,
-  $getTableCellData,
   isPseudoElementClick,
-  getColumnUniqueValues,
   applyTableView,
 } from './utils';
 import FilterDropdown from './FilterDropdown';
@@ -43,7 +41,6 @@ export default function TableSortFilterPlugin(): JSX.Element | null {
     tableKey: string;
     columnIndex: number;
     headerElement: HTMLElement;
-    uniqueValues: string[];
   } | null>(null);
 
   // Handle filter button click (completely independent of sort)
@@ -60,15 +57,12 @@ export default function TableSortFilterPlugin(): JSX.Element | null {
       // Ensure it's actually a TableNode
       if (targetTableNode instanceof TableNode) {
         const tableKey = targetTableNode.getKey();
-        const originalData = $getTableCellData(targetTableNode);
-        const uniqueValues = getColumnUniqueValues(originalData, columnIndex);
 
         // Show filter dropdown
         setActiveFilterDropdown({
           tableKey,
           columnIndex,
           headerElement,
-          uniqueValues,
         });
       } else {
         console.warn(
@@ -280,7 +274,6 @@ export default function TableSortFilterPlugin(): JSX.Element | null {
     <>
       {activeFilterDropdown && (
         <FilterDropdown
-          uniqueValues={activeFilterDropdown.uniqueValues}
           currentFilter={
             (() => {
               const currentFilterState = filterStates.get(activeFilterDropdown.tableKey);
