@@ -1,0 +1,79 @@
+/* TableStickyScrollerPlugin Styles */
+
+.table-sticky-scroller-container {
+  position: fixed;
+  z-index: 9998; /* Slightly below sticky header (9999) */
+  background-color: rgba(0, 0, 0, 0.1);
+  border: 1px solid #e1e5e9;
+  border-radius: 6px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  overflow: hidden;
+  pointer-events: auto;
+  box-sizing: border-box;
+  transition: opacity 0.2s ease-in-out;
+}
+
+.table-sticky-scroller {
+  width: 100%;
+  height: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  background: transparent;
+}
+
+.table-sticky-scroller-inner {
+  height: 1px;
+  background: transparent;
+  /* Width is set dynamically via JavaScript to match table width */
+}
+
+/* Custom scrollbar styling for better visibility */
+.table-sticky-scroller::-webkit-scrollbar {
+  height: 14px;
+}
+
+.table-sticky-scroller::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.8);
+  border-radius: 6px;
+}
+
+.table-sticky-scroller::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, #666, #444);
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+}
+
+.table-sticky-scroller::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(180deg, #888, #666);
+}
+
+.table-sticky-scroller::-webkit-scrollbar-thumb:active {
+  background: linear-gradient(180deg, #999, #777);
+}
+
+/* Firefox scrollbar styling */
+.table-sticky-scroller {
+  scrollbar-width: auto;
+  scrollbar-color: #666 rgba(255, 255, 255, 0.8);
+}
+
+/* Ensure proper display when shown */
+.table-sticky-scroller-container[style*='display: block'] {
+  opacity: 1;
+}
+
+/* Animation for smooth appearance */
+@keyframes stickyScrollerFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.table-sticky-scroller-container {
+  animation: stickyScrollerFadeIn 0.2s ease-out;
+}
